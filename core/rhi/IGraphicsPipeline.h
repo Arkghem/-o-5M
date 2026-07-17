@@ -14,8 +14,9 @@ struct VertexInputLayout {
     };
 
     struct Attribute {
+        uint32_t location;
         uint32_t binding;
-        enum FORMAT {FLOAT32, FLOAT32X2, FLOAT32X3, UINT8X4_UNORM};
+        enum FORMAT {FLOAT32, FLOAT32X2, FLOAT32X3, FLOAT32X4, UINT8X4_UNORM};
         FORMAT format;
         uint32_t offset;
     };
@@ -28,7 +29,7 @@ class IGraphicsPipeline {
 public:
     virtual ~IGraphicsPipeline() = default;
 
-    virtual void setShaderStage(IShader* vertex, IShader* fragment, 
+    virtual void setShaderStages(IShader* vertex, IShader* fragment, 
                             IShader* geometry = nullptr) = 0;
     virtual void setVertexInputLayout(const VertexInputLayout& layout) = 0;
 
@@ -57,7 +58,7 @@ public:
         Factor dstColorBlendFactor = ZERO;
     };
 
-    virtual void setBlendState(const BlendState& state) = 0;
+    virtual void setBlendState(int idx, const BlendState& state) = 0;
 
     virtual bool create(void) = 0;
 };

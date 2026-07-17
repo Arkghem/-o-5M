@@ -8,8 +8,8 @@ class IGraphicsPipeline;
 class IShaderResourceBindings;
 class IBuffer;
 
-class ClearValue;
-
+struct ClearValue;
+    
 class ICommandBuffer {
 public:
     virtual ~ICommandBuffer() = default;

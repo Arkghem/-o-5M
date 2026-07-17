@@ -17,7 +17,7 @@ public:
     void unmap(void) override;
 
     size_t sizeInBytes(void) const override;
-    BufferDesc& desc(void) const;
+    const BufferDesc& desc(void) const;
     GLuint handle(void) const;
 private:
     static GLenum toGLHint(BufferDesc::E_MEMORYHINT h);

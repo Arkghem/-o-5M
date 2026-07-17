@@ -114,7 +114,38 @@ void GLCommandBuffer::drawIndexed(int indexCount, int firstIndex, int vertexOffs
     glVertexArrayElementBuffer(vao, m_indexBuffer->handle());
     
     for (auto& [slot, vb] : m_vertexBindings) {
+        glVertexArrayVertexBuffer(vao, slot, vb.buffer->handle(), vb.offset, m_currentPipeline->layout().bindings[slot].stride);
+    }
 
+    for (auto& attr : m_currentPipeline->layout().attributes) {
+        GLenum glFmt = GLPipeline::toGLVertexAttribFormat(attr.format);
+        glVertexArrayAttribFormat(vao, attr.location, GLPipeline::componentCount(attr.format), glFmt, GL_FALSE, attr.offset);
+        glVertexArrayAttribBinding(vao, attr.location, attr.binding);
+        glEnableVertexArrayAttrib(vao, attr.location);
+    }
+
+    glBindVertexArray(vao);
+    glDrawElements(GL_TRIANGLES, indexCount, 
+            m_indexFormat == UINT32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, 
+            reinterpret_cast<void*>(firstIndex * (m_indexFormat == UINT32 ? 4 : 2)));
+    glBindVertexArray(0);
+}
+
+void GLCommandBuffer::draw(int vertexCount, int firstVertex) {
+    if (!m_currentPipeline || !m_currentFramebuffer) {
+        return;
+    }
+
+    GLuint vao;
+    glGenVertexArrays(1, &vao);
+
+    for (auto& [slot, vb] : m_vertexBindings) {
+        glVertexArrayVertexBuffer(vao, slot, vb.buffer->handle(), vb.offset, m_currentPipeline->layout().bindings[slot].stride);
+    }
+
+    for (auto& attr : m_currentPipeline->layout().attributes) {
+        GLenum glFmt = GLPipeline::toGLVertexAttribFormat(attr.format);
+        glVertexArrayAttribFormat(vao, attr.location, GLPipeline::componentCount(attr.format), glFmt, GL_FALSE, attr.offset);
     }
 }
 

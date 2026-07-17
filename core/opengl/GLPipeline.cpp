@@ -57,3 +57,24 @@ GLenum GLPipeline::toGLBlendFactor(BlendState::Factor factor) {
     }
     return GL_ZERO;
 }
+
+GLenum GLPipeline::toGLVertexAttribFormat(VertexInputLayout::Attribute::FORMAT format) {
+    switch (format) {
+        case VertexInputLayout::Attribute::FLOAT32: return GL_FLOAT;
+        case VertexInputLayout::Attribute::FLOAT32X2: return GL_FLOAT;
+        case VertexInputLayout::Attribute::FLOAT32X3: return GL_FLOAT;
+        case VertexInputLayout::Attribute::FLOAT32X4: return GL_FLOAT;
+        case VertexInputLayout::Attribute::UINT8X4_UNORM: return GL_UNSIGNED_BYTE;
+    }
+    return GL_FLOAT;
+}
+
+GLint GLPipeline::componentCount(VertexInputLayout::Attribute::FORMAT format) {
+    switch (format) {
+        case VertexInputLayout::Attribute::FLOAT32: return 1;
+        case VertexInputLayout::Attribute::FLOAT32X2: return 2;
+        case VertexInputLayout::Attribute::FLOAT32X3: return 3;
+        case VertexInputLayout::Attribute::FLOAT32X4: return 4;
+        case VertexInputLayout::Attribute::UINT8X4_UNORM: return 4;
+    }
+}

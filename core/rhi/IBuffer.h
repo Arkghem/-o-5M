@@ -31,6 +31,8 @@ public:
     virtual void upload(const void* data, size_t size, size_t offset) = 0;
 
     //TODO Permentally mapping
+    virtual void* map(size_t offset, size_t size) = 0;
+    virtual void unmap(void) = 0;
 
     virtual size_t sizeInBytes(void) const = 0;
 };

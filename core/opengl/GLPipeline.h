@@ -21,14 +21,19 @@ public:
         
     GLShader* vs(void) const { return m_vs; }
     GLShader* fs(void) const { return m_fs; }
+
     const RasterizerState& raster(void) const { return m_raster; }
     const DepthStencilState& depth(void) const { return m_depth; }
     const BlendState& blend(int i) const { return m_blends[i]; }
+    const VertexInputLayout& layout(void) const { return m_layout; }
+
     int blendCount(void) const { return m_blends.size(); }
     bool isValid(void) const { return m_isValid; }
 
     static GLenum toGLCompareOp(DepthStencilState::CompareOp op);
     static GLenum toGLBlendFactor(BlendState::Factor factor);
+    static GLenum toGLVertexAttribFormat(VertexInputLayout::Attribute::FORMAT format);
+    static GLint componentCount(VertexInputLayout::Attribute::FORMAT format);
 private:
     GLShader* m_vs = nullptr;
     GLShader* m_fs = nullptr;

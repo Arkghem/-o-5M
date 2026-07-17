@@ -10,6 +10,13 @@ class GLFramebuffer;
 class GLPipeline;
 class GLBuffer;
 
+struct ClearValue {
+    bool active;
+    GLfloat color[4];
+    GLfloat depth;
+    GLint stencil;
+};
+
 class GLCommandBuffer : public ICommandBuffer {
 public:
     void beginPass(IFramebuffer* fb, const ClearValue& colorClear, const ClearValue& depthClear) override;
