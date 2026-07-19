@@ -58,23 +58,47 @@ GLenum GLPipeline::toGLBlendFactor(BlendState::Factor factor) {
     return GL_ZERO;
 }
 
-GLenum GLPipeline::toGLVertexAttribFormat(VertexInputLayout::Attribute::FORMAT format) {
+GLPipeline::AttributeFormatInfo GLPipeline::attributeFormatInfo(VertexInputLayout::Attribute::FORMAT format) {
     switch (format) {
-        case VertexInputLayout::Attribute::FLOAT32: return GL_FLOAT;
-        case VertexInputLayout::Attribute::FLOAT32X2: return GL_FLOAT;
-        case VertexInputLayout::Attribute::FLOAT32X3: return GL_FLOAT;
-        case VertexInputLayout::Attribute::FLOAT32X4: return GL_FLOAT;
-        case VertexInputLayout::Attribute::UINT8X4_UNORM: return GL_UNSIGNED_BYTE;
-    }
-    return GL_FLOAT;
-}
-
-GLint GLPipeline::componentCount(VertexInputLayout::Attribute::FORMAT format) {
-    switch (format) {
-        case VertexInputLayout::Attribute::FLOAT32: return 1;
-        case VertexInputLayout::Attribute::FLOAT32X2: return 2;
-        case VertexInputLayout::Attribute::FLOAT32X3: return 3;
-        case VertexInputLayout::Attribute::FLOAT32X4: return 4;
-        case VertexInputLayout::Attribute::UINT8X4_UNORM: return 4;
+        case VertexInputLayout::Attribute::FLOAT32:
+            return {GL_FLOAT, 1, GL_FALSE};
+        case VertexInputLayout::Attribute::FLOAT32X2:
+            return {GL_FLOAT, 2, GL_FALSE};
+        case VertexInputLayout::Attribute::FLOAT32X3:
+            return {GL_FLOAT, 3, GL_FALSE};
+        case VertexInputLayout::Attribute::FLOAT32X4:
+            return {GL_FLOAT, 4, GL_FALSE};
+        case VertexInputLayout::Attribute::UINT8_UNORM:
+            return {GL_UNSIGNED_BYTE, 1, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT8X2_UNORM:
+            return {GL_UNSIGNED_BYTE, 2, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT8X4_UNORM:
+            return {GL_UNSIGNED_BYTE, 4, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT16_UNORM:
+            return {GL_UNSIGNED_SHORT, 1, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT16X2_UNORM:
+            return {GL_UNSIGNED_SHORT, 2, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT16X4_UNORM:
+            return {GL_UNSIGNED_SHORT, 4, GL_TRUE};
+        case VertexInputLayout::Attribute::INT8_SNorm:
+            return {GL_BYTE, 1, GL_TRUE};
+        case VertexInputLayout::Attribute::INT8X2_SNORM:
+            return {GL_BYTE, 2, GL_TRUE};
+        case VertexInputLayout::Attribute::INT8X4_SNORM:
+            return {GL_BYTE, 4, GL_TRUE};
+        case VertexInputLayout::Attribute::UINT8:
+            return {GL_UNSIGNED_BYTE, 1, GL_FALSE};
+        case VertexInputLayout::Attribute::UINT8X2:
+            return {GL_UNSIGNED_BYTE, 2, GL_FALSE};
+        case VertexInputLayout::Attribute::UINT8X4:
+            return {GL_UNSIGNED_BYTE, 4, GL_FALSE};
+        case VertexInputLayout::Attribute::INT32:
+            return {GL_INT, 1, GL_FALSE};
+        case VertexInputLayout::Attribute::INT32X2:
+            return {GL_INT, 2, GL_FALSE};
+        case VertexInputLayout::Attribute::INT32X3:
+            return {GL_INT, 3, GL_FALSE};
+        case VertexInputLayout::Attribute::INT32X4:
+            return {GL_INT, 4, GL_FALSE};
     }
 }

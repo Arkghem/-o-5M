@@ -118,8 +118,9 @@ void GLCommandBuffer::drawIndexed(int indexCount, int firstIndex, int vertexOffs
     }
 
     for (auto& attr : m_currentPipeline->layout().attributes) {
-        GLenum glFmt = GLPipeline::toGLVertexAttribFormat(attr.format);
-        glVertexArrayAttribFormat(vao, attr.location, GLPipeline::componentCount(attr.format), glFmt, GL_FALSE, attr.offset);
+        GLPipeline::AttributeFormatInfo attrFmtInfo = GLPipeline::attributeFormatInfo(attr.format);
+
+        glVertexArrayAttribFormat(vao, attr.location, attrFmtInfo.componentCount, attrFmtInfo.format, attrFmtInfo.normalisze, attr.offset);
         glVertexArrayAttribBinding(vao, attr.location, attr.binding);
         glEnableVertexArrayAttrib(vao, attr.location);
     }
@@ -144,9 +145,41 @@ void GLCommandBuffer::draw(int vertexCount, int firstVertex) {
     }
 
     for (auto& attr : m_currentPipeline->layout().attributes) {
-        GLenum glFmt = GLPipeline::toGLVertexAttribFormat(attr.format);
-        glVertexArrayAttribFormat(vao, attr.location, GLPipeline::componentCount(attr.format), glFmt, GL_FALSE, attr.offset);
+        GLPipeline::AttributeFormatInfo attrFmtInfo = GLPipeline::attributeFormatInfo(attr.format);
+        
+        glVertexArrayAttribFormat(vao, attr.location, attrFmtInfo.componentCount, attrFmtInfo.format, attrFmtInfo.normalisze, attr.offset);
+        glVertexArrayAttribBinding(vao, attr.location, attr.binding);
+        glEnableVertexArrayAttrib(vao, attr.location);
     }
+
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, firstVertex, vertexCount);
+    glBindVertexArray(0);
+}
+
+void GLCommandBuffer::drawInstanced(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
+    if (!m_currentPipeline || !m_currentFramebuffer) {
+        return;
+    }
+
+    GLuint vao;
+    glGenVertexArrays(1, &vao);
+
+    for (auto& [slot, vb] : m_vertexBindings) {
+        glVertexArrayVertexBuffer(vao, slot, vb.buffer->handle(), vb.offset, m_currentPipeline->layout().bindings[slot].stride);
+    }
+    
+    for (auto& attr : m_currentPipeline->layout().attributes) {
+        GLPipeline::AttributeFormatInfo attrFmtInfo = GLPipeline::attributeFormatInfo(attr.format);
+        
+        glVertexArrayAttribFormat(vao, attr.location, attrFmtInfo.componentCount, attrFmtInfo.format, attrFmtInfo.normalisze, attr.offset);
+        glVertexArrayAttribBinding(vao, attr.location, attr.binding);
+        glEnableVertexArrayAttrib(vao, attr.location);
+    }
+    
+    glBindVertexArray(vao);
+    glDrawArraysInstanced(GL_TRIANGLES, firstVertex, vertexCount, instanceCount);
+    glBindVertexArray(0);
 }
 
 void GLCommandBuffer::setViewport(int x, int y, int w, int h) {

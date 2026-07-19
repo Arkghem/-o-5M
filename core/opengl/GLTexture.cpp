@@ -12,7 +12,7 @@ bool GLTexture::create(void) {
     if (target == GL_TEXTURE_CUBE_MAP) {
         glTextureStorage2D(m_handle, m_desc.miplevels, internalFmt, m_desc.width, m_desc.height);
     } else {
-       int samples = m_desc.sampleCount; 
+       int samples = m_desc.format; 
 
        if (samples > 1) {
             glTextureStorage2DMultisample(m_handle, samples, internalFmt, m_desc.width, m_desc.height, GL_TRUE);

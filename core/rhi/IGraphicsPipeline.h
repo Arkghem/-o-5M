@@ -16,7 +16,14 @@ struct VertexInputLayout {
     struct Attribute {
         uint32_t location;
         uint32_t binding;
-        enum FORMAT {FLOAT32, FLOAT32X2, FLOAT32X3, FLOAT32X4, UINT8X4_UNORM};
+        enum FORMAT {
+            FLOAT32, FLOAT32X2, FLOAT32X3, FLOAT32X4, 
+            UINT8_UNORM, UINT8X2_UNORM, UINT8X4_UNORM,
+            UINT16_UNORM, UINT16X2_UNORM, UINT16X4_UNORM,
+            INT8_SNorm, INT8X2_SNORM, INT8X4_SNORM,
+            UINT8, UINT8X2, UINT8X4,
+            INT32, INT32X2, INT32X3, INT32X4,
+        };
         FORMAT format;
         uint32_t offset;
     };

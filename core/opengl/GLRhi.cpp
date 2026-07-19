@@ -11,3 +11,6 @@ std::unique_ptr<IBuffer> GLRhi::newBuffer(const BufferDesc& desc) {
     return std::make_unique<GLBuffer>(desc);
 }
 
+std::unique_ptr<ITexture> GLRhi::newTexture(const TextureDesc& desc) {
+    return std::make_unique<GLRhi>(desc);
+}

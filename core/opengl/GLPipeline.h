@@ -11,6 +11,12 @@ class GLShader;
 class GLPipeline : public IGraphicsPipeline
 {
 public:
+    struct AttributeFormatInfo {
+        GLenum format;
+        GLint componentCount;
+        GLboolean normalisze;
+    };
+public:
     void setShaderStages(IShader* vs, IShader* fs, IShader* gs) override;
     void setVertexInputLayout(const VertexInputLayout& layout) override;
     void setRasterizerState(const RasterizerState& state) override;
@@ -32,8 +38,7 @@ public:
 
     static GLenum toGLCompareOp(DepthStencilState::CompareOp op);
     static GLenum toGLBlendFactor(BlendState::Factor factor);
-    static GLenum toGLVertexAttribFormat(VertexInputLayout::Attribute::FORMAT format);
-    static GLint componentCount(VertexInputLayout::Attribute::FORMAT format);
+    static AttributeFormatInfo attributeFormatInfo(VertexInputLayout::Attribute::FORMAT format);
 private:
     GLShader* m_vs = nullptr;
     GLShader* m_fs = nullptr;
