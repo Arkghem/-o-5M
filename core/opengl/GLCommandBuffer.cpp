@@ -184,4 +184,19 @@ void GLCommandBuffer::drawInstanced(int vertexCount, int instanceCount, int firs
 
 void GLCommandBuffer::setViewport(int x, int y, int w, int h) {
     glViewport(x, y, w, h);
+};
+
+void GLCommandBuffer::setScissor(int x, int y, int w, int h) {
+    glScissor(x, y, w, h);
+};
+
+void GLCommandBuffer::pushDebugGroup(const char* name) {
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name);
 }
+
+void GLCommandBuffer::popDebugGroup(void) {
+    glPopDebugGroup();
+}
+
+
+
