@@ -26,7 +26,7 @@ public:
     void setViewport(int x, int y, int w, int h) override;
     void setScissor(int x, int y, int w, int h) override;
     void setShaderResources(IShaderResourceBindings* bindings) override;
-    void setVertexInput(int bindingSlot, IBuffer* buffer, int stride) override;
+    void setVertexInput(int bindingSlot, IBuffer* buffer, size_t offset) override;
     void setIndexBuffer(IBuffer* buffer, E_INDEX_FORMAT format) override;
 
     void draw(int vertexCount, int firstVertex = 0) override;

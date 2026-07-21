@@ -14,6 +14,13 @@ public:
 
     const TextureDesc& desc(void) const;
     GLuint handle(void) const;
+
+    int width(void) const override;
+    int height(void) const override;
+    int depth(void) const override;
+    int miplevels(void) const override;
+    int layers(void) const override;
+    int samples(void) const override;
 private:
     static GLenum toGLInternalFormat(TextureDesc::E_TEXTURE_FORMAT format);
     static GLenum toGLFormat(TextureDesc::E_TEXTURE_FORMAT format);

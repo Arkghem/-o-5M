@@ -15,6 +15,7 @@ public:
     virtual ~IShader() = default;
 
     virtual bool compile() = 0;
+    virtual bool link() = 0;
     virtual E_SHADER_TYPE type() const = 0;
     virtual const std::string& compileLog() const = 0;
 

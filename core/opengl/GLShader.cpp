@@ -13,38 +13,46 @@ bool GLShader::compile(void) {
         glType = GL_COMPUTE_SHADER;
     }
 
-    GLuint shaderObj = glCreateShader(glType);
+    m_shaderObj = glCreateShader(glType);
     const char* src = m_source.c_str();
-    glShaderSource(shaderObj, 1, &src, nullptr);
-    glCompileShader(shaderObj);
+    glShaderSource(m_shaderObj, 1, &src, nullptr);
+    glCompileShader(m_shaderObj);
 
     GLint success;
-    glGetShaderiv(shaderObj, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(m_shaderObj, GL_COMPILE_STATUS, &success);
 
     if (!success) {
         char log[1024];
-        glGetShaderInfoLog(shaderObj, 1024, nullptr, log);
+        glGetShaderInfoLog(m_shaderObj, 1024, nullptr, log);
         m_compileLog = log;
         return false;
     }
 
-    m_program = glCreateProgram();
-    glAttachShader(m_program, shaderObj);
+    return true;
+}
+
+bool GLShader::link(void) { 
+    if (!m_program) {
+        return false;
+    }
+
+    glAttachShader(m_program, m_shaderObj);
     glLinkProgram(m_program);
 
+    GLint success;
     glGetProgramiv(m_program, GL_LINK_STATUS, &success);
     if (!success) {
         char log[1024];
         glGetProgramInfoLog(m_program, 1024, nullptr, log);
         m_compileLog = log;
-        glDeleteShader(shaderObj);
-        glDeleteProgram(m_program);
+        glDeleteShader(m_shaderObj);
         return false;
     }
 
-    glDeleteShader(shaderObj);
+    glDeleteShader(m_shaderObj);
 
     reflectUniformBlocks();
+    reflectTextureBindings();
 
     return true;
 }
@@ -93,5 +101,37 @@ void GLShader::reflectUniformBlocks(void) {
             }
         }
         m_uniformBlocks.push_back(block);
+    }
+}
+
+void GLShader::reflectTextureBindings(void) {
+    int numUniforms;
+    glGetProgramInterfaceiv(m_program, GL_UNIFORM, GL_ACTIVE_RESOURCES, &numUniforms);
+
+    for (int i = 0; i < numUniforms; i++) {
+        GLenum prop = GL_TYPE;
+        GLint type;
+        glGetProgramResourceiv(m_program, GL_UNIFORM, i, 1, &prop, 1, nullptr, &type);
+
+        TextureBinding::Type bindingType;
+        switch (type) {
+            case GL_SAMPLER_2D: bindingType = TextureBinding::Sampler2D; break;
+            case GL_SAMPLER_CUBE: bindingType = TextureBinding::SamplerCube; break;
+            case GL_SAMPLER_2D_SHADOW: bindingType = TextureBinding::Sampler2DShadow; break;
+            default: continue;
+        }
+
+        TextureBinding binding;
+
+        char name[256];
+        glGetProgramResourceName(m_program, GL_UNIFORM, i, sizeof(name), nullptr, name);
+
+        binding.name = name;
+        binding.type = bindingType;
+
+        prop = GL_LOCATION;
+        glGetProgramResourceiv(m_program, GL_UNIFORM, i, 1, &prop, 1, nullptr, &binding.binding);
+        
+        m_textureBindings.push_back(binding);
     }
 }

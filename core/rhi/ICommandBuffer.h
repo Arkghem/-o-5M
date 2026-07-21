@@ -25,7 +25,7 @@ public:
     virtual void setShaderResources(IShaderResourceBindings* bindings) = 0;
     
     enum E_INDEX_FORMAT { UINT16, UINT32 };
-    virtual void setVertexInput(int bindingSlot, IBuffer* buffer, int stride) = 0;
+    virtual void setVertexInput(int bindingSlot, IBuffer* buffer, size_t offset) = 0;
     virtual void setIndexBuffer(IBuffer* buffer, E_INDEX_FORMAT format) = 0;
 
     virtual void draw(int vertexCount, int firstVertex = 0) = 0;

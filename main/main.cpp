@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 
+
 void initialize(int argc, char** argv) {
     if(!glfwInit()) {
         std::cerr <<"glfw failed\n";

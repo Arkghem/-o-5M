@@ -4,6 +4,7 @@
 void GLPipeline::setShaderStages(IShader* vs, IShader* fs, IShader* gs) {
     m_vs = static_cast<GLShader*>(vs);
     m_fs = static_cast<GLShader*>(fs);
+    m_gs = static_cast<GLShader*>(gs);
 }
 
 void GLPipeline::setVertexInputLayout(const VertexInputLayout& layout) {
@@ -29,6 +30,16 @@ bool GLPipeline::create(void) {
     if (!m_vs || !m_fs) {
         return false;
     }
+
+    m_program = glCreateProgram();
+
+    m_vs->setProgram(m_program);
+    m_fs->setProgram(m_program);
+    m_gs->setProgram(m_program);
+    
+    m_vs->link();
+    m_fs->link();
+    m_gs->link();
 
     m_isValid = true;
     return true;
@@ -101,4 +112,5 @@ GLPipeline::AttributeFormatInfo GLPipeline::attributeFormatInfo(VertexInputLayou
         case VertexInputLayout::Attribute::INT32X4:
             return {GL_INT, 4, GL_FALSE};
     }
+    return {GL_FLOAT, 0, GL_FALSE};
 }

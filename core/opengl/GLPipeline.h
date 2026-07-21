@@ -27,6 +27,9 @@ public:
         
     GLShader* vs(void) const { return m_vs; }
     GLShader* fs(void) const { return m_fs; }
+    GLShader* gs(void) const { return m_gs; }
+
+    GLint program(void) const { return m_program; }
 
     const RasterizerState& raster(void) const { return m_raster; }
     const DepthStencilState& depth(void) const { return m_depth; }
@@ -40,8 +43,10 @@ public:
     static GLenum toGLBlendFactor(BlendState::Factor factor);
     static AttributeFormatInfo attributeFormatInfo(VertexInputLayout::Attribute::FORMAT format);
 private:
+    GLuint m_program = 0;
     GLShader* m_vs = nullptr;
     GLShader* m_fs = nullptr;
+    GLShader* m_gs = nullptr;
     RasterizerState m_raster;
     DepthStencilState m_depth;
     std::vector<BlendState> m_blends;

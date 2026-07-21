@@ -12,7 +12,6 @@ void GLCommandBuffer::beginPass(IFramebuffer* fb, const ClearValue& colorClear, 
 
     GLbitfield clearMask = 0;
     if (colorClear.active) {
-        glClearNamedFramebufferfv(glFb->handle(), GL_COLOR, 0, &colorClear.color[0]);
         clearMask |= GL_COLOR_BUFFER_BIT;
     }
 
@@ -22,7 +21,7 @@ void GLCommandBuffer::beginPass(IFramebuffer* fb, const ClearValue& colorClear, 
     }
 
     int count = glFb->colorCount();
-    if (count > 0) {
+    if (count > 0 && clearMask & GL_COLOR_BUFFER_BIT) {
         std::vector<GLenum> drawBufs(count);
         for (int i = 0; i < count; i++) {
             glClearNamedFramebufferfv(glFb->handle(), GL_COLOR, i, &colorClear.color[0]);
@@ -36,6 +35,7 @@ void GLCommandBuffer::beginPass(IFramebuffer* fb, const ClearValue& colorClear, 
 
 void GLCommandBuffer::endPass(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_SCISSOR_TEST);
     m_currentFramebuffer = nullptr;
 }
 
@@ -46,7 +46,7 @@ void GLCommandBuffer::setGraphicPipeline(IGraphicsPipeline* pso) {
     }
     m_currentPipeline = glPso;
 
-    GLuint program = glPso->vs()->program();
+    GLuint program = glPso->program();
     glUseProgram(program);
 
     if (glPso->depth().depthTest) {
@@ -94,9 +94,9 @@ void GLCommandBuffer::setShaderResources(IShaderResourceBindings* bindings) {
     }
 }
 
-void GLCommandBuffer::setVertexInput(int bindingSlot, IBuffer* buffer, int stride) {
+void GLCommandBuffer::setVertexInput(int bindingSlot, IBuffer* buffer, size_t offset = 0) {
     auto* glBuffer = static_cast<GLBuffer*>(buffer);
-    m_vertexBindings[bindingSlot] = { glBuffer, static_cast<GLintptr>(stride) };
+    m_vertexBindings[bindingSlot] = { glBuffer, static_cast<GLintptr>(offset) };
 }
 
 void GLCommandBuffer::setIndexBuffer(IBuffer* buffer, E_INDEX_FORMAT format) {
@@ -128,8 +128,9 @@ void GLCommandBuffer::drawIndexed(int indexCount, int firstIndex, int vertexOffs
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, indexCount, 
             m_indexFormat == UINT32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, 
-            reinterpret_cast<void*>(firstIndex * (m_indexFormat == UINT32 ? 4 : 2)));
+            reinterpret_cast<void*>(firstIndex * (m_indexFormat == UINT32 ? 4 : 2) + vertexOffset));
     glBindVertexArray(0);
+    glDeleteVertexArrays(1, &vao);
 }
 
 void GLCommandBuffer::draw(int vertexCount, int firstVertex) {
@@ -155,6 +156,7 @@ void GLCommandBuffer::draw(int vertexCount, int firstVertex) {
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLES, firstVertex, vertexCount);
     glBindVertexArray(0);
+    glDeleteVertexArrays(1, &vao);
 }
 
 void GLCommandBuffer::drawInstanced(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
@@ -180,6 +182,7 @@ void GLCommandBuffer::drawInstanced(int vertexCount, int instanceCount, int firs
     glBindVertexArray(vao);
     glDrawArraysInstanced(GL_TRIANGLES, firstVertex, vertexCount, instanceCount);
     glBindVertexArray(0);
+    glDeleteVertexArrays(1, &vao);
 }
 
 void GLCommandBuffer::setViewport(int x, int y, int w, int h) {
@@ -188,6 +191,7 @@ void GLCommandBuffer::setViewport(int x, int y, int w, int h) {
 
 void GLCommandBuffer::setScissor(int x, int y, int w, int h) {
     glScissor(x, y, w, h);
+    glEnable(GL_SCISSOR_TEST);
 };
 
 void GLCommandBuffer::pushDebugGroup(const char* name) {

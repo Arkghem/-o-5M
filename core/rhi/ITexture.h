@@ -22,6 +22,7 @@ struct TextureDesc {
     
     int miplevels = 1;
     int layers = 1;
+    int samples = 1;
 
     enum E_TEXTURE_FLAG : uint32_t{
         RENDERTARGET    = 1 << 0,
@@ -46,6 +47,7 @@ public:
     
     virtual int miplevels(void) const = 0;
     virtual int layers(void) const = 0;
+    virtual int samples(void) const = 0;
 };
 
 #endif //ITEXTURE_H

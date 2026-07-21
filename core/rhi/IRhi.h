@@ -10,7 +10,8 @@ class ITexture;
 class TextureDesc;
 
 class IShader;
-enum class E_SHADER_TYPE : uint8_t;
+class IShaderResourceBindings;
+enum class E_SHADER_TYPE;
 
 class IFramebuffer;
 class IGraphicsPipeline;
@@ -24,10 +25,14 @@ public:
     virtual std::unique_ptr<ITexture> newTexture(const TextureDesc&) = 0;
 
     virtual std::unique_ptr<IShader> newShader(E_SHADER_TYPE, const char* source) = 0;
+    virtual std::unique_ptr<IShaderResourceBindings> newShaderResourceBindings(void) = 0;
 
     virtual std::unique_ptr<IFramebuffer> newFramebuffer(void)= 0;
     virtual std::unique_ptr<IGraphicsPipeline> newGraphicsPipeline(void) = 0;
 
     virtual ICommandBuffer* commandBuffer(void) = 0;
+
+    virtual void beginFrame(void) = 0;
+    virtual void endFrame(void) = 0;
 };
 #endif //__IRHI_H

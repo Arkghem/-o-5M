@@ -12,7 +12,7 @@ bool GLTexture::create(void) {
     if (target == GL_TEXTURE_CUBE_MAP) {
         glTextureStorage2D(m_handle, m_desc.miplevels, internalFmt, m_desc.width, m_desc.height);
     } else {
-       int samples = m_desc.format; 
+       int samples = m_desc.samples; 
 
        if (samples > 1) {
             glTextureStorage2DMultisample(m_handle, samples, internalFmt, m_desc.width, m_desc.height, GL_TRUE);
@@ -24,16 +24,31 @@ bool GLTexture::create(void) {
 }
 
 void GLTexture::upload(const void* data, int miplevel, int layer) {
-    GLenum target = (m_desc.flags & TextureDesc::CUBEMAP) ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + layer : GL_TEXTURE_2D;
     GLenum format = toGLFormat(m_desc.format);
     GLenum type = toGLType(m_desc.format);
 
-    glTextureSubImage2D(m_handle, miplevel, 0, 0, m_desc.width >> miplevel, m_desc.height >> miplevel, format, type, data);
+    if (m_desc.flags & TextureDesc::CUBEMAP) {
+        glTextureSubImage3D(m_handle, miplevel, 0, 0, layer, m_desc.width >> miplevel, m_desc.height >> miplevel, 1, format, type, data);
+    } else {
+        glTextureSubImage2D(m_handle, miplevel, 0, 0, m_desc.width >> miplevel, m_desc.height >> miplevel, format, type, data);
+    }
 }
 
 const TextureDesc& GLTexture::desc(void) const { return m_desc; }
 
 GLuint GLTexture::handle(void) const { return m_handle; }
+
+int GLTexture::width(void) const { return m_desc.width; }
+
+int GLTexture::height(void) const { return m_desc.height; }
+
+int GLTexture::depth(void) const { return m_desc.depth; }
+
+int GLTexture::miplevels(void) const { return m_desc.miplevels; }
+
+int GLTexture::layers(void) const { return m_desc.layers; }
+
+int GLTexture::samples(void) const { return m_desc.samples; }
 
 GLenum GLTexture::toGLInternalFormat(TextureDesc::E_TEXTURE_FORMAT format) {
     switch (format) {
