@@ -17,13 +17,17 @@ bool GLRhi::init(GLFWwindow* window) {
     glfwMakeContextCurrent(window);
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
 
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    glDebugMessageCallback([](GLenum src, GLenum type, GLuint id, GLenum severity,
-                              GLsizei length, const GLchar* message, const void* userParam) {
-                if (severity != GL_DEBUG_SEVERITY_NOTIFICATION)
-                    std::cerr<<"GL: "<<message<<std::endl;
-            }, nullptr);
+    // GL_DEBUG_OUTPUT / glDebugMessageCallback are GL 4.3+ core.
+    // On macOS, OpenGL is capped at 4.1 — skip debug output.
+    if (GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 3)) {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback([](GLenum src, GLenum type, GLuint id, GLenum severity,
+                                  GLsizei length, const GLchar* message, const void* userParam) {
+                    if (severity != GL_DEBUG_SEVERITY_NOTIFICATION)
+                        std::cerr<<"GL: "<<message<<std::endl;
+                }, nullptr);
+    }
 
     m_commandBuffer = std::make_unique<GLCommandBuffer>();
     m_window = window;

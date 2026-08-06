@@ -62,6 +62,40 @@ target_link_libraries(opengl_rhi
 )
 
 # ---------------------------------------------------------------------------
+# Vulkan RHI Backend (shared library) — Phase 10+
+# ---------------------------------------------------------------------------
+# Same IRhi interface as opengl_rhi, different GPU API underneath.
+# Source files live in core/vulkan/; target is only created when files exist
+# AND O5M_VULKAN is enabled at the CMake level.
+if(O5M_VULKAN)
+    file(GLOB_RECURSE VULKAN_RHI_SOURCES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/*.hpp
+    )
+
+    if(VULKAN_RHI_SOURCES)
+        add_library(vulkan_rhi SHARED ${VULKAN_RHI_SOURCES})
+
+        target_include_directories(vulkan_rhi
+            PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/vulkan
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rhi
+        )
+
+        target_link_libraries(vulkan_rhi
+            PUBLIC  core_rhi
+            PRIVATE Vulkan::Vulkan
+        )
+
+        if(WIN32)
+            target_compile_definitions(vulkan_rhi PRIVATE VULKAN_RHI_EXPORTS)
+        endif()
+    else()
+        message(WARNING "O5M_VULKAN=ON but no source files found in core/vulkan/")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Platform-specific: Windows DLL export
 # ---------------------------------------------------------------------------
 # Shared libraries on Windows require __declspec(dllexport) on public symbols.

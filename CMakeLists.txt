@@ -28,6 +28,17 @@ add_subdirectory(core)
 # OpenGL is provided by the system graphics driver.
 find_package(OpenGL REQUIRED)
 
+# Vulkan (Optional — Vulkan RHI backend, Phase 10+)
+# Enable with: cmake -DO5M_VULKAN=ON ..
+# Requires Vulkan SDK: https://vulkan.lunarg.com/
+option(O5M_VULKAN "Build with Vulkan RHI backend support" OFF)
+
+if(O5M_VULKAN)
+    find_package(Vulkan REQUIRED)
+    message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
+    add_compile_definitions(O5M_HAS_VULKAN)
+endif()
+
 # GLFW3 — window and input management. Install via vcpkg or system package.
 #   vcpkg: ./vcpkg install glfw3
 #   Homebrew (macOS): brew install glfw
@@ -59,6 +70,13 @@ if(glfw3_FOUND)
 else()
     target_link_libraries(o5m PRIVATE glfw)
 endif()
+
+# ---------------------------------------------------------------------------
+# RHI Verification Executable
+# ---------------------------------------------------------------------------
+add_executable(rhi_verify main/rhi_verify.cpp)
+
+target_link_libraries(rhi_verify PRIVATE opengl_rhi glad OpenGL::GL glfw)
 
 # ---------------------------------------------------------------------------
 # Platform-Specific Settings
