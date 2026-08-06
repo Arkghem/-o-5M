@@ -28,6 +28,10 @@ public:
     void beginFrame() override;
     void endFrame() override;
 
+    // --- Accessors (for readback / debugging) ---
+    VulkanDevice* device()           const { return m_device.get(); }
+    uint32_t      currentImageIndex() const { return m_currentImageIndex; }
+
 private:
     std::unique_ptr<VulkanDevice> m_device;
     std::unique_ptr<VKCommandBuffer> m_commandBuffer;

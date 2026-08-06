@@ -43,6 +43,7 @@ public:
     VkFormat         swapchainFormat()  const { return m_swapchainFormat; }
     VkExtent2D       swapchainExtent()  const { return m_swapchainExtent; }
     uint32_t         imageCount()       const { return static_cast<uint32_t>(m_swapchainImageViews.size()); }
+    VkImage          swapchainImage(uint32_t i)    const { return m_swapchainImages[i]; }
     VkImageView      swapchainImageView(uint32_t i) const { return m_swapchainImageViews[i]; }
     VkSwapchainKHR   swapchain()        const { return m_swapchain; }
     VkSurfaceKHR     surface()           const { return m_surface; }
