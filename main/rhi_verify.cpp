@@ -173,7 +173,14 @@ int main() {
     TextureDesc depthDesc;
     depthDesc.width  = kWindowWidth;
     depthDesc.height = kWindowHeight;
+#ifdef O5M_HAS_VULKAN
+    // MoltenVK on Apple Silicon silently converts D24_UNORM_S8_UINT VkImages to
+    // D32_SFLOAT_S8_UINT, leaving the VkImageView/VkRenderPass on D24 → mismatch.
+    // D32_SFLOAT is the most portable depth format (stencil not used here).
+    depthDesc.format = TextureDesc::D32_SFLOAT;
+#else
     depthDesc.format = TextureDesc::D24_UNORM_S8_UINT;
+#endif
     depthDesc.flags  = TextureDesc::RENDERTARGET;
     auto depthTex = rhi.newTexture(depthDesc);
     if (!depthTex->create()) { std::cerr << "[RHI_VERIFY] Depth tex create failed\n"; return EXIT_FAILURE; }
@@ -214,10 +221,45 @@ int main() {
         depth.depthCompareOp  = IGraphicsPipeline::DepthStencilState::LESS;
         pso->setDepthStencilState(depth);
     }
+#ifndef O5M_HAS_VULKAN
     if (!pso->create()) { std::cerr << "[RHI_VERIFY] PSO create failed\n"; return EXIT_FAILURE; }
     std::cout << "[RHI_VERIFY] Pipeline (PSO) created\n";
+#else
+    // Vulkan has no no-arg pipeline create: VKPipeline is built lazily by
+    // setGraphicPipeline (it needs the render pass + extent at creation time).
+#endif
 #ifndef O5M_HAS_VULKAN
     checkGLError("pipeline");
+#endif
+
+#ifdef O5M_HAS_VULKAN
+    // A VkPipeline is baked to ONE render pass (attachment formats are part of
+    // the PSO). The off-screen FBO pass (RGBA8 + depth) and the swapchain pass
+    // (B8G8R8A8_SRGB, no depth) are different render passes → the swapchain
+    // needs its own pipeline. It must be depthless: the swapchain render pass
+    // has no depth attachment, and a depth-testing pipeline bound there is
+    // render-pass-incompatible.
+    auto psoSwap = rhi.newGraphicsPipeline();
+    psoSwap->setShaderStages(vs.get(), fs.get());
+    {
+        VertexInputLayout layout;
+        layout.bindings.push_back({ 24, false });
+        layout.attributes.push_back({ 0, 0, VertexInputLayout::Attribute::FLOAT32X3, 0  });
+        layout.attributes.push_back({ 1, 0, VertexInputLayout::Attribute::FLOAT32X3, 12 });
+        psoSwap->setVertexInputLayout(layout);
+    }
+    {
+        IGraphicsPipeline::RasterizerState raster;
+        raster.cullMode = IGraphicsPipeline::RasterizerState::BACK;
+        psoSwap->setRasterizerState(raster);
+    }
+    {
+        IGraphicsPipeline::DepthStencilState depth;
+        depth.depthTest       = false;
+        depth.depthWrite      = false;
+        depth.depthCompareOp  = IGraphicsPipeline::DepthStencilState::LESS;
+        psoSwap->setDepthStencilState(depth);
+    }
 #endif
 
     auto* cmd    = rhi.commandBuffer();
@@ -256,11 +298,12 @@ int main() {
         //   Pass 2 — swapchain (beginPass(nullptr)): renders to screen.
         //            Uses the swapchain render pass + per-frame framebuffer
         //            wired by VKRhi::beginFrame() → beginRecording().
-        //            Same pipeline, same vertex buffer — RHI is identical.
+        //            psoSwap is depthless because the swapchain render pass
+        //            has no depth attachment (separate from the FBO's pso).
         cmd->beginPass(nullptr, colorClear, depthClear);
         cmd->setViewport(0, 0, kWindowWidth, kWindowHeight);
         cmd->setScissor(0, 0, kWindowWidth, kWindowHeight);
-        cmd->setGraphicPipeline(pso.get());
+        cmd->setGraphicPipeline(psoSwap.get());
         cmd->setVertexInput(0, vbo.get(), 0);
         cmd->draw(3, 0);
         cmd->endPass();
