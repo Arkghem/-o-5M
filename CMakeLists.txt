@@ -17,10 +17,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Vendored Third-Party Dependencies
 # ---------------------------------------------------------------------------
 add_subdirectory(third_party)
-# ---------------------------------------------------------------------------
-# Core Library
-# ---------------------------------------------------------------------------
-add_subdirectory(core)
 
 # ---------------------------------------------------------------------------
 # System / Package Dependencies
@@ -37,6 +33,23 @@ if(O5M_VULKAN)
     find_package(Vulkan REQUIRED)
     message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
     add_compile_definitions(O5M_HAS_VULKAN)
+
+    find_package(shaderc QUIET)
+    if(NOT shaderc_FOUND)
+        # Fallback: Vulkan SDK ships shaderc_combined. Try to locate it.
+        find_library(SHADERC_LIBRARY NAMES shaderc_combined)
+        if(SHADERC_LIBRARY)
+            add_library(shaderc::shaderc_combined UNKNOWN IMPORTED)
+            set_target_properties(shaderc::shaderc_combined PROPERTIES
+                IMPORTED_LOCATION ${SHADERC_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
+            message(STATUS "shaderc found (fallback): ${SHADERC_LIBRARY}")
+        else()
+            message(FATAL_ERROR "shaderc not found. Install Vulkan SDK: https://vulkan.lunarg.com/")
+        endif()
+    else()
+        message(STATUS "shaderc found via CMake config")
+    endif()
 endif()
 
 # GLFW3 — window and input management. Install via vcpkg or system package.
@@ -55,6 +68,14 @@ if(NOT glfw3_FOUND AND NOT glfw_FOUND)
         "Or via system package manager (brew install glfw / apt install libglfw3-dev)"
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# Core Library
+# ---------------------------------------------------------------------------
+# Added AFTER dependency discovery (OpenGL/Vulkan/glfw3/shaderc) so that the
+# imported targets they create (Vulkan::Vulkan, shaderc::shaderc_combined,
+# OpenGL::GL) are visible to the RHI backends defined in core/.
+add_subdirectory(core)
 
 # ---------------------------------------------------------------------------
 # Main Executable
@@ -76,7 +97,11 @@ endif()
 # ---------------------------------------------------------------------------
 add_executable(rhi_verify main/rhi_verify.cpp)
 
-target_link_libraries(rhi_verify PRIVATE opengl_rhi glad OpenGL::GL glfw)
+if(O5M_VULKAN)
+    target_link_libraries(rhi_verify PRIVATE vulkan_rhi Vulkan::Vulkan glfw)
+else()
+    target_link_libraries(rhi_verify PRIVATE opengl_rhi glad OpenGL::GL glfw)
+endif()
 
 # ---------------------------------------------------------------------------
 # Platform-Specific Settings

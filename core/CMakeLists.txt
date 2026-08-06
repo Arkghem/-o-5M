@@ -85,6 +85,7 @@ if(O5M_VULKAN)
         target_link_libraries(vulkan_rhi
             PUBLIC  core_rhi
             PRIVATE Vulkan::Vulkan
+            PRIVATE shaderc::shaderc_combined
         )
 
         if(WIN32)
