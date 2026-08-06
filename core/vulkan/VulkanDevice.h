@@ -38,6 +38,7 @@ public:
 
     VkDevice         device()          const { return m_device; }
     VkQueue          queue()           const { return m_graphicsQueue; }
+    VkPhysicalDevice physicalDevice()  const { return m_physicalDevice; }
     uint32_t         queueFamilyIndex() const { return m_queueFamilyIndex; }
     VkFormat         swapchainFormat()  const { return m_swapchainFormat; }
     VkExtent2D       swapchainExtent()  const { return m_swapchainExtent; }
@@ -45,6 +46,8 @@ public:
     VkImageView      swapchainImageView(uint32_t i) const { return m_swapchainImageViews[i]; }
     VkSwapchainKHR   swapchain()        const { return m_swapchain; }
     VkSurfaceKHR     surface()           const { return m_surface; }
+    VkRenderPass     swapchainRenderPass()  const { return m_swapchainRenderPass; }
+    VkFramebuffer    swapchainFramebuffer(uint32_t i) const { return m_swapchainFramebuffers[i]; }
 
     // --- Memory helper (used by VKMemoryAllocator) ---
 
@@ -75,6 +78,7 @@ private:
     void createLogicalDevice();          // VkDevice + graphics queue
     void createSurface(GLFWwindow* window); // VkSurfaceKHR via GLFW
     void createSwapchain();              // VkSwapchainKHR + image views
+    void createSwapchainRenderPass();    // Default render pass + per-image framebuffers
     void createDefaultSampler();         // Linear filtering, repeat wrap
 
     // --- Vulkan object handles ---
@@ -92,6 +96,8 @@ private:
     VkExtent2D               m_swapchainExtent  = {800, 600};
     VkDebugUtilsMessengerEXT m_debugMessenger   = VK_NULL_HANDLE;
     VkSampler                m_defaultSampler   = VK_NULL_HANDLE;
+    VkRenderPass             m_swapchainRenderPass   = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer> m_swapchainFramebuffers;
 
     bool m_validationEnabled = false;        // true if layers were successfully loaded
 };

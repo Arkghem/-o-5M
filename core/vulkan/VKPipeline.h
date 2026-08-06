@@ -64,6 +64,11 @@ public:
     /// VkPipeline truly immutable — the render pass is baked in.
     bool create(VkRenderPass renderPass, VkExtent2D extent);
 
+    /// No-arg interface override — returns false. Vulkan pipelines require
+    /// render pass + extent at creation time; use create(rp, extent) instead.
+    /// VKCommandBuffer calls this lazily via create(rp, extent) when needed.
+    bool create() override { return false; }
+
     // ── Queries ──────────────────────────────────────────────────────────
 
     VkPipeline       pipeline()        const { return m_pipeline; }

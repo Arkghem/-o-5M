@@ -78,6 +78,7 @@ bool VulkanDevice::init(GLFWwindow* window)
     createLogicalDevice();
     createSurface(window);
     createSwapchain();
+    createSwapchainRenderPass();
     createDefaultSampler();
     return true;
 }
@@ -476,6 +477,81 @@ void VulkanDevice::createSwapchain()
 }
 
 // ===========================================================================
+// createSwapchainRenderPass() — default render pass + per-image framebuffers
+// ===========================================================================
+// Teaching note: the swapchain is a ring buffer of VkImages, but Vulkan
+// requires a VkFramebuffer per image for rendering. This method creates:
+//   1. A VkRenderPass describing the single color attachment (no depth).
+//   2. N VkFramebuffers — one per swapchain image — binding each image view.
+//
+// loadOp = CLEAR means the GPU can discard previous contents without reading
+// VRAM (tile-based GPUs love this). storeOp = STORE writes back to the
+// swapchain image for presentation.
+//
+// The render pass declares the finalLayout = PRESENT_SRC_KHR — Vulkan uses
+// this to insert the correct image layout transition before vsync.
+// ===========================================================================
+void VulkanDevice::createSwapchainRenderPass()
+{
+    // --- Attachment description (single color, no depth) ---
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format         = m_swapchainFormat;
+    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorRef{};
+    colorRef.attachment = 0;
+    colorRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments    = &colorRef;
+
+    // Subpass dependency: wait for swapchain image acquisition before rendering
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass    = 0;
+    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments    = &colorAttachment;
+    renderPassInfo.subpassCount    = 1;
+    renderPassInfo.pSubpasses      = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies   = &dependency;
+
+    VK_CHECK(vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_swapchainRenderPass),
+             "vkCreateRenderPass (swapchain)");
+
+    // --- Per-image framebuffers ---
+    m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+    for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
+        VkFramebufferCreateInfo fbInfo{};
+        fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass      = m_swapchainRenderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments    = &m_swapchainImageViews[i];
+        fbInfo.width           = m_swapchainExtent.width;
+        fbInfo.height          = m_swapchainExtent.height;
+        fbInfo.layers          = 1;
+
+        VK_CHECK(vkCreateFramebuffer(m_device, &fbInfo, nullptr, &m_swapchainFramebuffers[i]),
+                 "vkCreateFramebuffer (swapchain)");
+    }
+}
+
+// ===========================================================================
 // createDefaultSampler() — linear filtering, repeat wrap, no anisotropy
 // ===========================================================================
 // Teaching note: In OpenGL, sampler state lives inside the texture object
@@ -565,6 +641,17 @@ void VulkanDevice::shutdown()
         vkDestroyImageView(m_device, view, nullptr);
     }
     m_swapchainImageViews.clear();
+
+    // Destroy swapchain framebuffers and render pass
+    for (auto fb : m_swapchainFramebuffers) {
+        vkDestroyFramebuffer(m_device, fb, nullptr);
+    }
+    m_swapchainFramebuffers.clear();
+    if (m_swapchainRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_swapchainRenderPass, nullptr);
+        m_swapchainRenderPass = VK_NULL_HANDLE;
+    }
+
     m_swapchainImages.clear();
 
     // Destroy swapchain
