@@ -5,17 +5,11 @@
 #include <map>
 
 #include "ICommandBuffer.h"
+#include "ClearValue.h"
 
 class GLFramebuffer;
 class GLPipeline;
 class GLBuffer;
-
-struct ClearValue {
-    bool active;
-    GLfloat color[4];
-    GLfloat depth;
-    GLint stencil;
-};
 
 class GLCommandBuffer : public ICommandBuffer {
 public:
