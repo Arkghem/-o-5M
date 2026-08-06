@@ -75,6 +75,8 @@ if(O5M_VULKAN)
     )
 
     if(VULKAN_RHI_SOURCES)
+        find_package(spdlog REQUIRED)
+
         add_library(vulkan_rhi SHARED ${VULKAN_RHI_SOURCES})
 
         target_include_directories(vulkan_rhi
@@ -86,6 +88,8 @@ if(O5M_VULKAN)
             PUBLIC  core_rhi
             PRIVATE Vulkan::Vulkan
             PRIVATE shaderc::shaderc_combined
+            PRIVATE glfw
+            PRIVATE spdlog::spdlog
         )
 
         if(WIN32)
