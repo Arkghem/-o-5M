@@ -1,0 +1,140 @@
+{
+  "active_plan": "/Users/cuishiyue/Developer/-o-5M/.sisyphus/plans/rhi-vulkan-backend.md",
+  "started_at": "2026-08-06T06:19:06.641Z",
+  "session_ids": [
+    "ses_02a7435f2ffe5tRzT4kU5cEKMX",
+    "ses_02a37941dffeapTo1JAdUZ93bc",
+    "ses_02a376abdffe1L87dWU4LbHaV8",
+    "ses_02a3735e1fferzxJjUnGQzj1In",
+    "ses_02a2d4fdbffegfzqZ2ujOitOfQ",
+    "ses_02a2d028dffeMmrCOvxVwIoxD3",
+    "ses_02a0cde2affeRb2lDiLsb58twX",
+    "ses_02a0cc679ffei1CEgss9dtsURA",
+    "ses_02a0cabd2ffeskuARzCg7KYQGX",
+    "ses_02a0c8ce2ffeEqQhuemDrxUfBA"
+  ],
+  "session_origins": {
+    "ses_02a7435f2ffe5tRzT4kU5cEKMX": "direct",
+    "ses_02a37941dffeapTo1JAdUZ93bc": "appended",
+    "ses_02a376abdffe1L87dWU4LbHaV8": "appended",
+    "ses_02a3735e1fferzxJjUnGQzj1In": "appended",
+    "ses_02a2d4fdbffegfzqZ2ujOitOfQ": "appended",
+    "ses_02a2d028dffeMmrCOvxVwIoxD3": "appended",
+    "ses_02a0cde2affeRb2lDiLsb58twX": "appended",
+    "ses_02a0cc679ffei1CEgss9dtsURA": "appended",
+    "ses_02a0cabd2ffeskuARzCg7KYQGX": "appended",
+    "ses_02a0c8ce2ffeEqQhuemDrxUfBA": "appended"
+  },
+  "plan_name": "rhi-vulkan-backend",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "迁移 `ClearValue` 到 `core/rhi/ClearValue.h`",
+      "session_id": "ses_02a44f019ffeuZiax7Bc3lh7bV",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-08-06T06:21:13.630Z"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "CMake 接线：shaderc + `vulkan_rhi` 目标激活",
+      "session_id": "ses_02a423916fferHCN8wv0oB9RK1",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-08-06T06:24:28.747Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "`VulkanDevice` 单例：VkInstance / PhysicalDevice / Device / Queue / Swapchain / validation",
+      "session_id": "ses_02a3fd061ffe5tTRP6Yz5MQY8J",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-08-06T06:32:20.387Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "`VKMemoryAllocator`：手写 VkDeviceMemory 分配器",
+      "session_id": "ses_02a38f805ffeL2LOnMDX69mgey",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-08-06T06:34:18.107Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "`VKBuffer`：重写现有空壳，实现完整 IBuffer",
+      "session_id": "ses_02a3735e1fferzxJjUnGQzj1In",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-08-06T06:39:53.882Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "`VKShaderResourceBindings`：descriptor set 最小实现",
+      "session_id": "ses_02a3218feffeJVyVP7JjYunLjS",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-08-06T06:45:22.589Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "`VKPipeline`：state structs → VkGraphicsPipelineCreateInfo",
+      "session_id": "ses_02a2d028dffeMmrCOvxVwIoxD3",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-08-06T06:52:50.569Z"
+    },
+    "todo:11": {
+      "task_key": "todo:11",
+      "task_label": "11",
+      "task_title": "`VKCommandBuffer`：记录式 N 缓冲命令缓冲",
+      "session_id": "ses_02a265a8effeCrCVOchCcaAy6C",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-08-06T07:00:56.356Z"
+    },
+    "todo:12": {
+      "task_key": "todo:12",
+      "task_label": "12",
+      "task_title": "`VKRhi`：工厂 + acquire/submit/present 帧循环",
+      "session_id": "ses_02a1ec381ffeB2ifIBDv51Va6X",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-08-06T07:08:26.510Z"
+    },
+    "todo:13": {
+      "task_key": "todo:13",
+      "task_label": "13",
+      "task_title": "`rhi_verify.cpp`：`#ifdef O5M_HAS_VULKAN` 分支 + staging buffer 像素回读",
+      "session_id": "ses_02a18375fffeMLg0EayPL0dp4I",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-08-06T07:16:42.839Z"
+    },
+    "todo:14": {
+      "task_key": "todo:14",
+      "task_label": "14",
+      "task_title": "教学文档 `PHASE-VULKAN.md`（遵循 AGENTS.md 输出格式）",
+      "session_id": "ses_02a10587fffecc3Wf3vSPOfXLz",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-08-06T07:21:15.230Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_02a095aa3ffetJwq8lfEOTIhxE",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-08-06T07:41:39.632Z"
+    }
+  }
+}
