@@ -67,3 +67,8 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+.zcode/
+.vectorcode/
+./AGENTS.md
+./PHASE-VULKAN.md
