@@ -458,4 +458,5 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
     // 这就是 frames-in-flight 的最小雏形（每帧一个 fence）。
     // TODO(you, Phase 3): rhi_verify 改成 fence 等待，替换 device.waitIdle()。
     queue.submit(submitInfo, fence ? **fence : vk::Fence{ nullptr });
+    //草泥马的，这代码真是一坨。有 bug。先干别的吧。
 }
