@@ -1,80 +1,70 @@
 #include "O5MResourceManager.h"
 
 #include "O5MResource.h"
-#include "O5MMeshResource.h"
-#include "O5MTextureResource.h"
-#include "O5MShaderResource.h"
 
 template<typename T>
-T* O5MResourceManager::getResource(const std::string& resourceId) {
-    auto& typeResources = resources[std::type_index(typeid(T))];
-    auto it = typeResources.find(resourceId);
-
-    if (it != typeResources.end()) {
+T* O5MResourceManager::getResource(const uint32_t resourceId) {
+    auto it = resources.find(resourceId);
+    if (it != resources.end()) {
         return static_cast<T*>(it->second.resource.get());
     }
 
     return nullptr;
 }
 
-template<typename T>
-bool O5MResourceManager::hasResource(const std::string& resourceId) {
-    auto& typeResources = resources[std::type_index(typeid(T))];
-    auto it = typeResources.find(resourceId);
-
-    return it != typeResources.end();
+bool O5MResourceManager::hasResource(const uint32_t resourceId) {
+    auto it = resources.find(resourceId);
+    return it != resources.end();
 }
 
-template<typename T>
-void O5MResourceManager::release(const std::string& resourceId) {
-    auto& typeResources = resources[std::type_index(typeid(T))];
-    auto it = typeResources.find(resourceId);
+void O5MResourceManager::release(const uint32_t resourceId) {
+    auto it = resources.find(resourceId);
 
-    if (it != typeResources.end()) {
+    if (it != resources.end()) {
         it->second.refCount--;
 
         if (it->second.refCount <= 0) {
             it->second.resource->unload();
-            typeResources.erase(it);
+            resources.erase(it);
         }
     }
 }
 
 template<typename T>
-O5MResourceHandle<T> O5MResourceManager::load(const std::string& resourceId) {
+uint32_t O5MResourceManager::load(const std::string& filePath) {
     static_assert(std::is_base_of<O5MResource, T>::value);
-
-    O5MResourceHandle<T> handle(resourceId, this);
-    auto& typeResources = resources[std::type_index(typeid(T))];
-    auto it = typeResources.find(resourceId);
-
-    if (it != typeResources.end()) {
-        it->second.refCount++;
+    
+    auto it = pathToId.find(filePath);
+    uint32_t resourceId;
+    if (it != pathToId.end()) {
+        resources[it->second].refCount++;
+        resourceId = it->second;
     } else {
-        auto resource = std::make_shared<T>(resourceId);
+        auto resource = std::make_shared<T>(filePath);
         if (!resource->load()) {
-            handle = O5MResourceHandle<T>();
+            throw std::runtime_error("Failed to load resource: " + filePath);
         }
-        typeResources[resourceId] = { resource, 1 };
+        resourceId = allocateId();
+        resources[resourceId] = { resource, 1 };
     }
 
-    std::string filePath = getFilePath<T>(resourceId);
     try {
-        fileTimestamps[filePath] = std::filesystem::last_write_time(filePath);
+        fileTimestamps[resourceId] = std::filesystem::last_write_time(filePath);
     } catch (const std:: filesystem::filesystem_error& e) {
         //file doesn't exist
     }
 
-    return handle;
+    return resourceId;
 }
 
 void O5MResourceManager::unloadAll(void) {
-    for (auto& [type, typeResources] : resources) {
-        for (auto& [id, resourceData] : typeResources) {
-            resourceData.resource->unload();
-        }
-        typeResources.clear();
+    for (auto& [id, resourceData] : resources) {
+        resourceData.resource->unload();
     }
+    
+    nextId = 1;
+
+    pathToId.clear();
     resources.clear();
 }
 
@@ -92,20 +82,18 @@ void O5MResourceManager::stopWatcher(void) {
     }
 }
 
-template<typename T>
-std::string O5MResourceManager::getFilePath(const std::string& resourceId) {
-    auto& filePattern = pathPattern[std::type_index(typeid(T))];
-    return std::get<0>(filePattern) + resourceId + std::get<1>(filePattern);
-}
-
 void O5MResourceManager::updateWatcherThread(void) {
     while (running) {
-        for (auto& [filePath, timestamp] : fileTimestamps) {
+        for (auto& [resourceId, timestamp] : fileTimestamps) {
             try {
-                auto currentTimestamp = std::filesystem::last_write_time(filePath);
-                if (currentTimestamp != timestamp) {
-                    timestamp = currentTimestamp;
-                    reloadResource(filePath);
+                auto it = resources.find(resourceId);
+                if (it != resources.end()) {
+                    const std::string& filePath = it->second.resource->getfilePath();
+                    auto currentTimestamp = std::filesystem::last_write_time(filePath);
+                    if (currentTimestamp != timestamp) {
+                        timestamp = currentTimestamp;
+                        reloadResource(resourceId);
+                    }
                 }
             } catch (const std::filesystem::filesystem_error& e) {
                 //file doesn't exist
@@ -114,6 +102,14 @@ void O5MResourceManager::updateWatcherThread(void) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
-void O5MResourceManager::reloadResource(const std::string& filePath) {
-    
+void O5MResourceManager::reloadResource(const uint32_t resourceId) {
+    auto it = resources.find(resourceId);
+    if (it != resources.end()) {
+        try {
+            it->second.resource->unload();
+            it->second.resource->load();
+        } catch (const std::exception& e) {
+            throw std::runtime_error("reload resource failed at" + it->second.resource->getfilePath());
+        }
+    }
 }

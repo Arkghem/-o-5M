@@ -1,5 +1,8 @@
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+
 #include "O5MRendergraph.h"
 
+#include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_format_traits.hpp>
 
 vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
@@ -19,6 +22,25 @@ vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
     }
 }
 
+vk::ImageLayout readLayoutFromUsage(vk::ImageUsageFlags usage, vk::Format fmt) {
+    vk::ImageAspectFlags aspect = aspectFromFormat(fmt);
+    if (aspect & vk::ImageAspectFlagBits::eDepth && aspect & vk::ImageAspectFlagBits::eStencil) {
+        if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) 
+            return vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+        return vk::ImageLayout::eShaderReadOnlyOptimal;
+    } else if (aspect & vk::ImageAspectFlagBits::eDepth) {
+        if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)
+            return vk::ImageLayout::eDepthReadOnlyOptimal;
+        return vk::ImageLayout::eShaderReadOnlyOptimal;
+    } else {
+        if (usage & vk::ImageUsageFlagBits::eColorAttachment)
+            return vk::ImageLayout::eColorAttachmentOptimal;
+        else if (usage & vk::ImageUsageFlagBits::eTransferSrc)
+            return vk::ImageLayout::eTransferSrcOptimal;
+        return vk::ImageLayout::eShaderReadOnlyOptimal;
+    }
+}
+
 vk::ImageLayout layoutFromUsage(vk::ImageUsageFlags usage, vk::Format fmt) {
     vk::ImageAspectFlags aspect = aspectFromFormat(fmt);
     bool isDepthStencil =vk::hasDepthComponent(fmt) || vk::hasStencilComponent(fmt);
@@ -29,13 +51,36 @@ vk::ImageLayout layoutFromUsage(vk::ImageUsageFlags usage, vk::Format fmt) {
         return vk::ImageLayout::eShaderReadOnlyOptimal;
     } else if (aspect & vk::ImageAspectFlagBits::eDepth) {
         if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)
-            return vk::ImageLayout::eDepthStencilAttachmentOptimal;
+            return vk::ImageLayout::eDepthAttachmentOptimal;
         return vk::ImageLayout::eShaderReadOnlyOptimal;
     } else {
         if (usage & vk::ImageUsageFlagBits::eColorAttachment)
             return vk::ImageLayout::eColorAttachmentOptimal;
         return vk::ImageLayout::eShaderReadOnlyOptimal;
     }
+}
+
+vk::AccessFlags accessFlagFromBufferUsage(vk::BufferUsageFlags usage, bool isRead) {
+    vk::AccessFlags flags;
+    if (isRead) {
+        if (usage & vk::BufferUsageFlagBits::eVertexBuffer)
+            flags |= vk::AccessFlagBits::eVertexAttributeRead;
+        if (usage & vk::BufferUsageFlagBits::eIndexBuffer)
+            flags |= vk::AccessFlagBits::eIndexRead;
+        if (usage & vk::BufferUsageFlagBits::eUniformBuffer)
+            flags |= vk::AccessFlagBits::eUniformRead;
+        if (usage & vk::BufferUsageFlagBits::eStorageBuffer)
+            flags |= vk::AccessFlagBits::eShaderRead & vk::AccessFlagBits::eShaderWrite;
+        if (usage & vk::BufferUsageFlagBits::eTransferSrc)
+            flags |= vk::AccessFlagBits::eTransferRead;
+    } else {
+        if (usage & vk::BufferUsageFlagBits::eTransferDst)
+            flags |= vk::AccessFlagBits::eTransferWrite;
+        if (usage & vk::BufferUsageFlagBits::eStorageBuffer)
+            flags |= vk::AccessFlagBits::eShaderWrite & vk::AccessFlagBits::eShaderRead;
+    }
+
+    return flags;
 }
 
 vk::AccessFlags accessFlagsFromLayout(vk::ImageLayout layout) {
@@ -61,6 +106,23 @@ vk::AccessFlags accessFlagsFromLayout(vk::ImageLayout layout) {
     }
 }
 
+vk::PipelineStageFlags stageFlagsFromBufferUsage(vk::BufferUsageFlags usage) {
+    vk::PipelineStageFlags flags;
+    if (usage & vk::BufferUsageFlagBits::eVertexBuffer)
+        flags |= vk::PipelineStageFlagBits::eVertexInput;
+    if (usage & vk::BufferUsageFlagBits::eIndexBuffer)
+        flags |= vk::PipelineStageFlagBits::eVertexInput;
+    if (usage & vk::BufferUsageFlagBits::eUniformBuffer)
+        flags |= vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader;
+    if (usage & vk::BufferUsageFlagBits::eStorageBuffer)
+        flags |= vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader;
+    if (usage & vk::BufferUsageFlagBits::eTransferSrc)
+        flags |= vk::PipelineStageFlagBits::eTransfer;
+    if (usage & vk::BufferUsageFlagBits::eTransferDst)
+        flags |= vk::PipelineStageFlagBits::eTransfer;
+    return flags;
+}
+
 vk::PipelineStageFlags stageFlagsFromLayout(vk::ImageLayout layout) {
     switch (layout) {
         case vk::ImageLayout::eUndefined:
@@ -84,6 +146,17 @@ vk::PipelineStageFlags stageFlagsFromLayout(vk::ImageLayout layout) {
     }
 }
 
+uint32_t O5MRendergraph::findMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties) const {
+    vk::PhysicalDeviceMemoryProperties memProperties = m_physicalDevice.getMemoryProperties();
+
+    for (size_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if(typeBits & (1u << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+
+    throw std::runtime_error("findMemoryType: no suitable memory type found");
+}
+
 void O5MRendergraph::addResource(const std::string& name, vk::Format format, vk::Extent2D extent,
                                  vk::ImageUsageFlags usage, vk::ImageLayout initialLayout,
                                  vk::ImageLayout finalLayout) {
@@ -96,6 +169,19 @@ void O5MRendergraph::addResource(const std::string& name, vk::Format format, vk:
     resourceDesc.finalLayout = finalLayout;
 
     m_resources[name] = resourceDesc;
+}
+
+void O5MRendergraph::addBufferResource(const std::string& name, vk::DeviceSize size,
+                                       vk::BufferUsageFlags usage,
+                                       vk::MemoryPropertyFlags memoryProperties) {
+    ResourceDesc desc;
+    desc.name = name;
+    desc.kind = ResourceKind::Buffer;
+    desc.size = size;
+    desc.bufferUsage = usage;
+    desc.memoryProperties = memoryProperties;
+
+    m_resources[name] = desc;
 }
 
 void O5MRendergraph::addPass(const std::string& name, const std::vector<std::string>& inputs,
@@ -154,6 +240,27 @@ void O5MRendergraph::compile(void) {
 
 
     for (auto& [name, resource] : m_resources) {
+        if (resource.kind == ResourceKind::Buffer) {
+            vk::BufferCreateInfo bufInfo{
+                .size = resource.size,
+                .usage = resource.bufferUsage,
+                .sharingMode = vk::SharingMode::eExclusive
+            };
+
+            resource.buffer = vk::raii::Buffer(m_device, bufInfo);
+            auto memReqs = resource.buffer.getMemoryRequirements();
+            uint32_t memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, resource.memoryProperties);
+            vk::MemoryAllocateInfo memAllocInfo{
+                .allocationSize = memReqs.size,
+                .memoryTypeIndex = memoryTypeIndex
+            };
+
+            resource.memory = vk::raii::DeviceMemory(m_device, memAllocInfo);
+            resource.buffer.bindMemory(*resource.memory, 0);
+
+            continue;
+        }
+
         vk::ImageCreateInfo imageInfo;
         imageInfo.setImageType(vk::ImageType::e2D)
                  .setFormat(resource.format)
@@ -172,7 +279,9 @@ void O5MRendergraph::compile(void) {
 
         vk::MemoryAllocateInfo allocInfo;
         allocInfo.setAllocationSize(memReqs.size)
-                 .setMemoryTypeIndex(0);
+                 .setMemoryTypeIndex(findMemoryType(
+                     memReqs.memoryTypeBits,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal));
 
         resource.memory = m_device.allocateMemory(allocInfo);
         resource.image.bindMemory(resource.memory, 0);
@@ -187,12 +296,15 @@ void O5MRendergraph::compile(void) {
     }
 }
 
-void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue) {
+void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
+                             vk::raii::Fence* fence) {
     std::vector<vk::CommandBuffer> commandBuffers;
     std::unordered_map<std::string, vk::ImageLayout> resourceLayoutStates;
+    std::unordered_map<std::string, std::pair<vk::AccessFlags, vk::PipelineStageFlags>> bufferLastStates;
 
     for (auto& [name, resource] : m_resources) {
         resourceLayoutStates[name] = resource.initialLayout;
+        bufferLastStates[name] = {vk::AccessFlagBits::eHostWrite, vk::PipelineStageFlagBits::eHost};
     }
 
     commandBuffer.begin({});
@@ -202,12 +314,35 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
         for (const auto& input : pass.inputs) {
             auto& resource = m_resources[input];
 
-            if (resourceLayoutStates[input] == vk::ImageLayout::eShaderReadOnlyOptimal)
+            if (resource.kind == ResourceKind::Buffer) {
+                vk::BufferMemoryBarrier bufBarrier{
+                    .srcAccessMask = bufferLastStates[resource.name].first,
+                    .dstAccessMask = accessFlagFromBufferUsage(resource.bufferUsage, true),
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .buffer = *resource.buffer,
+                };
+
+                commandBuffer.pipelineBarrier(
+                    bufferLastStates[resource.name].second,
+                    stageFlagsFromBufferUsage(resource.bufferUsage),
+                    vk::DependencyFlagBits::eByRegion,
+                    {}, { bufBarrier }, {}
+                );
+
+                bufferLastStates[resource.name] = { accessFlagFromBufferUsage(resource.bufferUsage, true), stageFlagsFromBufferUsage(resource.bufferUsage)};
+
+                continue;
+            }
+
+            const vk::ImageLayout readLayout = readLayoutFromUsage(resource.usage, resource.format);
+
+            if (resourceLayoutStates[input] == readLayout)
                 continue;
 
             vk::ImageMemoryBarrier barrier;
             barrier.setOldLayout(resourceLayoutStates[input])
-                   .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                   .setNewLayout(readLayout)
                    .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                    .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                    .setImage(*resource.image)
@@ -222,11 +357,31 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                 {}, {}, { barrier }
             );
 
-            resourceLayoutStates[input] = vk::ImageLayout::eShaderReadOnlyOptimal;
+            resourceLayoutStates[input] = readLayout;
         }
 
         for (const auto& output : pass.outputs) {
             auto& resource = m_resources[output];
+
+            if (resource.kind == ResourceKind::Buffer) {
+                vk::BufferMemoryBarrier bufBarrier{
+                    .srcAccessMask = bufferLastStates[resource.name].first,
+                    .dstAccessMask = accessFlagFromBufferUsage(resource.bufferUsage, false),
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .buffer = *resource.buffer,
+                };
+
+                commandBuffer.pipelineBarrier(
+                    bufferLastStates[resource.name].second,
+                    stageFlagsFromBufferUsage(resource.bufferUsage),
+                    vk::DependencyFlagBits::eByRegion,
+                    {}, { bufBarrier }, {}
+                );
+
+                bufferLastStates[resource.name] = { accessFlagFromBufferUsage(resource.bufferUsage, false), stageFlagsFromBufferUsage(resource.bufferUsage)};
+                continue;
+            }
             auto& format = resource.format;
 
             vk::ImageMemoryBarrier barrier;
@@ -254,6 +409,25 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
         for (const auto& output : pass.outputs) {
             auto& resource = m_resources[output];
 
+            if (resource.kind == ResourceKind::Buffer) {
+                vk::BufferMemoryBarrier barrier; 
+                barrier.setSrcAccessMask(bufferLastStates[resource.name].first)
+                       .setDstAccessMask(accessFlagFromBufferUsage(resource.bufferUsage, true))
+                       .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                       .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                       .setBuffer(*resource.buffer);                
+
+                commandBuffer.pipelineBarrier(
+                    bufferLastStates[resource.name].second,
+                    stageFlagsFromBufferUsage(resource.bufferUsage),
+                    vk::DependencyFlagBits::eByRegion,
+                    {}, { barrier }, {}
+                );
+
+                bufferLastStates[resource.name] = { accessFlagFromBufferUsage(resource.bufferUsage, true), stageFlagsFromBufferUsage(resource.bufferUsage)};
+                continue;
+            }
+
             vk::ImageMemoryBarrier barrier;
             barrier.setOldLayout(resourceLayoutStates[output])
                    .setNewLayout(resource.finalLayout)
@@ -262,7 +436,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                    .setImage(*resource.image)
                    .setSubresourceRange({aspectFromFormat(resource.format), 0, 1, 0, 1})
                    .setSrcAccessMask(accessFlagsFromLayout(resourceLayoutStates[output]))
-                   .setDstAccessMask(vk::AccessFlagBits::eMemoryRead);
+                   .setDstAccessMask(accessFlagsFromLayout(resource.finalLayout));
 
             commandBuffer.pipelineBarrier(
                 stageFlagsFromLayout(resourceLayoutStates[output]),
@@ -273,7 +447,6 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
 
             resourceLayoutStates[output] = resource.finalLayout;
         }
-
     }
 
     commandBuffer.end();
@@ -281,5 +454,8 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
     vk::SubmitInfo submitInfo;
     submitInfo.setCommandBuffers(*commandBuffer);
 
-    queue.submit(submitInfo, nullptr);
+    // fence：CPU-GPU 同步点。submit 后由调用方 waitForFences + resetFence，
+    // 这就是 frames-in-flight 的最小雏形（每帧一个 fence）。
+    // TODO(you, Phase 3): rhi_verify 改成 fence 等待，替换 device.waitIdle()。
+    queue.submit(submitInfo, fence ? **fence : vk::Fence{ nullptr });
 }

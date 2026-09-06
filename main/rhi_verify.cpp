@@ -26,11 +26,14 @@ const std::vector<const char*> kInstanceExtensions = {
 };
 // 该 SDK 头文件未定义 VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME 宏，用字符串字面量
 const std::vector<const char*> kDeviceExtensions = {
-    "VK_KHR_portability_subset"
+    "VK_KHR_portability_subset",
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME // dynamic rendering（Vulkan 1.3 转正，1.2 走扩展）
 };
 #else
 const std::vector<const char*> kInstanceExtensions = {};
-const std::vector<const char*> kDeviceExtensions = {};
+const std::vector<const char*> kDeviceExtensions = {
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
+};
 #endif
 
 uint32_t findGraphicsQueueFamily(const vk::PhysicalDevice& physicalDevice) {
@@ -102,8 +105,11 @@ int main() {
         float queuePriority = 1.0f;
         vk::DeviceQueueCreateInfo queueInfo({}, graphicsFamily, 1, &queuePriority);
         vk::DeviceCreateInfo deviceInfo;
+        // feature 也要显式开（Vulkan 的 feature 都默认关）
+        vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures(true);
         deviceInfo.setQueueCreateInfos(queueInfo)
-                  .setPEnabledExtensionNames(kDeviceExtensions);
+                  .setPEnabledExtensionNames(kDeviceExtensions)
+                  .setPNext(&dynamicRenderingFeatures);
         vk::raii::Device device(physicalDevice, deviceInfo);
         vk::raii::Queue queue(device, graphicsFamily, 0);
         std::cout << "[ok] device + graphics queue (family " << graphicsFamily << ")\n";
@@ -115,7 +121,7 @@ int main() {
 
         // ---- 5. rendergraph 最小管线 ----
         //   render(写 rt) -> composite(读 rt)
-        O5MRendergraph graph(device);
+        O5MRendergraph graph(device, *physicalDevice);
 
         graph.addResource("rt", vk::Format::eR8G8B8A8Unorm, { 64, 64 },
                           vk::ImageUsageFlagBits::eColorAttachment |

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 project(o5m LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
@@ -9,7 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ---------------------------------------------------------------------------
 # C++ Standard
 # ---------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -97,11 +97,8 @@ endif()
 # ---------------------------------------------------------------------------
 add_executable(rhi_verify main/rhi_verify.cpp)
 
-if(O5M_VULKAN)
-    target_link_libraries(rhi_verify PRIVATE vulkan_rhi Vulkan::Vulkan glfw)
-else()
-    target_link_libraries(rhi_verify PRIVATE opengl_rhi glad OpenGL::GL glfw)
-endif()
+# offscreen 验证程序：只依赖 o5m_core（Vulkan/glm 经 PUBLIC 传播），无窗口。
+target_link_libraries(rhi_verify PRIVATE o5m_core)
 
 # ---------------------------------------------------------------------------
 # Platform-Specific Settings

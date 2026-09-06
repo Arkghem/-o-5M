@@ -28,13 +28,14 @@ void O5MMeshResource::doUnload(void) {
 }
 
 bool O5MMeshResource::loadMeshData(std::string& filePath, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
-
+    // TODO(you): 用 tinygltf 解析 glTF，填充 vertices/indices
+    return false; // 未实现，返回 false 走加载失败路径，避免缺 return 的 UB
 }
 
 void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
-
+    // TODO(you): staging buffer + device local buffer
 }
 
 void O5MMeshResource::createIndexBuffer(std::vector<uint32_t>& indices) {
-
+    // TODO(you): 同上
 }

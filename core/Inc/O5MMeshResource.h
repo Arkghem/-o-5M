@@ -32,7 +32,7 @@ private:
     vk::raii::Device m_device = nullptr;
     std::unique_ptr<MeshData> m_data;
 public:
-    O5MMeshResource(const std::string &name) : O5MResource(name){};
+    O5MMeshResource(const std::string &id) : O5MResource(id){};
     ~O5MMeshResource() override { unload(); };
 public:
     vk::Buffer getVertexBuffer(void) const { return *m_data->m_vertexBuffer; }

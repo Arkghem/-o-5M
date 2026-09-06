@@ -2,53 +2,60 @@
 #define __O5MRESOURCEMANAGER__H
 
 #include <unordered_map>
-#include <typeindex>
 #include <string>
+#include <cstdint>
 #include <filesystem>
 #include <thread>
 
-#include "O5MResource.h"
+class O5MResource;
 
 class O5MResourceManager {
 private:
+    O5MResourceManager(void) = default;
+
     struct O5MResourceData {
         std::shared_ptr<O5MResource> resource;
         int refCount;
         bool isPreloaded;
     };
 
-    std::unordered_map<std::type_index,
-                       std::unordered_map<std::string, O5MResourceData>> resources;
-    std::unordered_map<std::type_index, std::tuple<std::string, std::string>> pathPattern; //register sheet
+    std::unordered_map<uint32_t, O5MResourceData> resources;
+    std::unordered_map<std::string, uint32_t> pathToId;
 
     // --Multithread part
-    std::unordered_map<std::string, std::filesystem::file_time_type> fileTimestamps;
+    std::unordered_map<uint32_t, std::filesystem::file_time_type> fileTimestamps;
     std::thread watcherThread;
     std::atomic<bool> running = false;
+
+    // --Allocate id part
+    std::atomic<uint32_t> nextId = 1;
 public:
-    template<typename T>
-    T* getResource(const std::string& resourceId) ;
+    static O5MResourceManager& getInstance(void) {
+        static O5MResourceManager instance;
+        return instance;
+    }
+
+    uint32_t allocateId(void) {
+        return nextId.fetch_add(1, std::memory_order_relaxed);
+    }
 
     template<typename T>
-    bool hasResource(const std::string& resourceId);
+    T* getResource(const uint32_t resourceId) ;
 
-    //why it doesn't a template
-    //it think it need one
-    template<typename T>
-    void release(const std::string& resourceId);    
+    bool hasResource(const uint32_t resourceId);
+
+    void release(const uint32_t resourceId);    
 
     template<typename T>
-    O5MResourceHandle<T> load(const std::string& resourceId);
+    uint32_t load(const std::string& filePath);
 
     void unloadAll(void);
 
     void startWatcher(void);
     void stopWatcher(void);
 private:
-    template<typename T>
-    std::string getFilePath(const std::string& resourceId);
     void updateWatcherThread(void);
-    void reloadResource(const std::string& filePath);
+    void reloadResource(const uint32_t resourceId);
 };
 
 

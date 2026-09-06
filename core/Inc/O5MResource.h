@@ -1,17 +1,38 @@
 #ifndef __O5MRESOURCE__H
 #define __O5MRESOURCE__H
 
+#include <cstdint>
 #include <string>
+#include <fstream>
+
+#include "O5MResourceManager.h"
 
 class O5MResource {
+protected:
+    std::string readFile(const std::string& filePath) {
+        std::ifstream file(filePath, std::ios::ate | std::ios::binary);
+
+        if (!file.is_open()) {
+            throw std::runtime_error("failed to open file: " + filePath);
+        }
+
+        size_t fileSize = (size_t)file.tellg();
+        std::vector<char> buffer(fileSize);
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+        file.close();
+        return std::string(buffer.begin(), buffer.end());
+    }
 private:
-    std::string resourceId;
+    std::string m_filePath;
     bool loaded = false;
+
 public:
-    explicit O5MResource(const std::string& id) : resourceId(id) {}
+    explicit O5MResource(const std::string filePath) : m_filePath(filePath) {}
     virtual ~O5MResource() = default;
+
 public:
-    const std::string& getId(void) const { return resourceId; }
+    const std::string& getfilePath(void) const { return m_filePath; }
     bool isloaded(void) const { return loaded; }
 public:
     // call virtual function for specific loading and unloading
@@ -28,18 +49,14 @@ protected:
     virtual void doUnload(void) = 0;
 };
 
-
-class O5MResourceManager;
-
 template <typename T>
 class O5MResourceHandle {
 private:
-    std::string resourceId;
-    O5MResourceManager*  resourceManager;
+    O5MResourceManager&  resourceManager = O5MResourceManager::getInstance();
+    uint32_t resourceId = 0;
 public:
-    O5MResourceHandle(void) : resourceManager(nullptr) {}
-    O5MResourceHandle(const std::string& resourceId, O5MResourceManager* resourceManager = nullptr) : 
-        resourceId(resourceId), resourceManager(resourceManager) {}
+    O5MResourceHandle(void) = delete;
+    [[nodiscard]] O5MResourceHandle(const std::string& filePath);
 public:
     T* operator->(void) const { return get(); }
     T& operator&(void) const { return *get(); }
@@ -47,10 +64,11 @@ public:
 public:
     T* get() const;
 
-    bool isValid(void) const;
+    bool isValid(void) const { return resourceId == 0; };
 
-    const std::string& getId(void) const {
+    const uint32_t getId(void) const {
         return resourceId;
     }
 };
+
 #endif //!__O5MRESOURCE__H
