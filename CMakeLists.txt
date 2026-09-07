@@ -18,6 +18,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 add_subdirectory(third_party)
 
+# tinygltf — header-only glTF 2.0 loader（FetchContent 引入，vcpkg/brew 无现成包）。
+# TINYGLTF_HEADER_ONLY=ON → 仅创建 INTERFACE 目标，不编译任何 .cc；
+# TINYGLTF_IMPLEMENTATION 由 core/Src/O5MMeshResource.cpp 这一个 TU 提供，
+# 若改用默认静态库模式会与之产生重复符号，必须保持 header-only。
+include(FetchContent)
+set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG v2.9.4
+)
+FetchContent_MakeAvailable(tinygltf)
+
 # ---------------------------------------------------------------------------
 # System / Package Dependencies
 # ---------------------------------------------------------------------------
