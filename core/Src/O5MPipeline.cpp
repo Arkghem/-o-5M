@@ -1,41 +1,21 @@
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #include "O5MPipeline.h"
-#include "O5MPipeline.h"
 
-
-// ---------------------------------------------------------------------------
-// createPipeline —— TODO(you)
-// ---------------------------------------------------------------------------
-// 思路（参考 vkguide.dev "dynamic rendering" 章节的数据流）：
-//   1. ShaderModule：vk::ShaderModuleCreateInfo { pCode = spirv.data(),
-//      codeSize = 字节数(spirv.size() * sizeof(uint32_t)) }，
-//      每阶段 PipelineShaderStageCreateInfo { stage, *module, "main" }。
-//   2. VertexInputState 全默认（无顶点绑定/属性，fullscreen triangle 的顶点
-//      在 VS 里由 gl_VertexIndex 展开：(-1,-1) (3,-1) (-1,3)）。
-//   3. InputAssembly：eTriangleList。
-//   4. Viewport/Scissor：创建时给 dummy（数量 1），配合 DynamicState
-//      { eViewport, eScissor }，begin() 里动态设置——extent 变化不用重建管线。
-//   5. Rasterization：eFill / cull eNone（绕过绕序坑）/ frontFace 任意 / lineWidth 1。
-//   6. Multisample：e1。
-//   7. ColorBlend：每个 colorFormat 一个 blendEnable=false 的 attachment state。
-//   8. PipelineLayout 先建空的（{}），descriptor 后续阶段再加。
-//   9. dynamic rendering 的关键差异：GraphicsPipelineCreateInfo 里没有 renderPass
-//      （填默认 {}），改为 pNext 挂 vk::PipelineRenderingCreateInfo：
-//          renderingInfo.setColorAttachmentFormats(colorFormats);
-//      注意 renderingInfo 的生命周期必须覆盖 createGraphicsPipeline 调用。
 void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
                                  const O5MResourceHandle<O5MShaderResource>& vsSpirv,
-                                 const O5MResourceHandle<O5MShaderResource>& fsSpirv) {
+                                 const O5MResourceHandle<O5MShaderResource>& fsSpirv,
+                                 const char* vsEntry,
+                                 const char* fsEntry) {
     vk::PipelineShaderStageCreateInfo vsState {
         .stage = vk::ShaderStageFlagBits::eVertex,
         .module = vsSpirv->getShaderModule(),
-        .pName = "vertMain",
+        .pName = vsEntry 
     };
 
     vk::PipelineShaderStageCreateInfo fsState {
         .stage = vk::ShaderStageFlagBits::eFragment,
         .module = fsSpirv->getShaderModule(),
-        .pName = "fragMain",
+        .pName = fsEntry
     };
 
     vk::PipelineShaderStageCreateInfo shaderStages[] = { vsState, fsState };

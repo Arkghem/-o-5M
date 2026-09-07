@@ -21,7 +21,7 @@ private:
     int m_channels = 0;
     std::unique_ptr<TextureData> m_data;
 public:
-    O5MTextureResource(const std::string &name) : O5MResource(name){};
+    O5MTextureResource(const std::string& filePath, vk::raii::Device& device) : O5MResource(filePath, device){};
     ~O5MTextureResource() override { unload(); };
 public:
     vk::Image getImage(void) const { return *m_data->m_image; }

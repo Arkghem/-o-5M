@@ -1,14 +1,29 @@
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+
 #ifndef __O5MRESOURCE__H
 #define __O5MRESOURCE__H
 
 #include <cstdint>
 #include <string>
 #include <fstream>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 #include "O5MResourceManager.h"
 
 class O5MResource {
 protected:
+    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties){
+        vk::BufferCreateInfo bufferInfo {
+            .size = size,
+            .usage = usage,
+            .sharingMode = vk::SharingMode::eExclusive
+        };
+
+        vk::raii::Buffer buffer = vk::raii::Buffer(m_device, bufferInfo);
+        
+    }
+
     std::string readFile(const std::string& filePath) {
         std::ifstream file(filePath, std::ios::ate | std::ios::binary);
 
@@ -25,21 +40,25 @@ protected:
     }
 private:
     std::string m_filePath;
+    vk::raii::Device& m_device;
     bool loaded = false;
 
 public:
-    explicit O5MResource(const std::string filePath) : m_filePath(filePath) {}
+    explicit O5MResource(const std::string filePath, vk::raii::Device& device) : 
+        m_filePath(filePath),
+        m_device(device) {}
     virtual ~O5MResource() = default;
 
 public:
     const std::string& getfilePath(void) const { return m_filePath; }
+    vk::raii::Device& getDevice(void) const { return m_device; }
     bool isloaded(void) const { return loaded; }
 public:
-    // call virtual function for specific loading and unloading
     bool load(void) {
         loaded = doLoad();
         return loaded;
     }; 
+
     void unload(void) {
         doUnload();
         loaded = false;

@@ -18,21 +18,21 @@ private:
     };
 
     struct MeshData{
-        vk::raii::Buffer m_vertexBuffer;
-        vk::raii::DeviceMemory m_vertexBufferMemory;
-        vk::DeviceSize m_vertexBufferOffset;
+        vk::raii::Buffer m_vertexBuffer = nullptr;
+        vk::raii::DeviceMemory m_vertexBufferMemory = nullptr;
+        vk::DeviceSize m_vertexBufferOffset = 0;
         uint32_t m_vertexCount = 0;
 
-        vk::raii::Buffer m_indexBuffer;
-        vk::raii::DeviceMemory m_indexBufferMemory;
-        vk::DeviceSize m_indexBufferOffset;
+        vk::raii::Buffer m_indexBuffer = nullptr;
+        vk::raii::DeviceMemory m_indexBufferMemory = nullptr;
+        vk::DeviceSize m_indexBufferOffset = 0;
         uint32_t m_indexCount = 0;
     };
 
     vk::raii::Device m_device = nullptr;
     std::unique_ptr<MeshData> m_data;
 public:
-    O5MMeshResource(const std::string &id) : O5MResource(id){};
+    O5MMeshResource(const std::string& filePath, vk::raii::Device& device) : O5MResource(filePath, device){};
     ~O5MMeshResource() override { unload(); };
 public:
     vk::Buffer getVertexBuffer(void) const { return *m_data->m_vertexBuffer; }
@@ -49,7 +49,7 @@ private:
     bool doLoad(void) override;
     void doUnload(void) override;
 
-    bool loadMeshData(std::string& filePath, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+    bool loadMeshData(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
     void createVertexBuffer(std::vector<Vertex>& vertices);
     void createIndexBuffer(std::vector<uint32_t>& indices);
 };

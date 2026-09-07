@@ -1,16 +1,22 @@
 #include "O5MMeshResource.h"
 
 #include <vector>
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <tiny_gltf.h>
 
 bool O5MMeshResource::doLoad(void) {
-    std::string filepath = "models/" + getId() + ".gltf";
-
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     
-    if (!loadMeshData(filepath, vertices, indices)) {
+    if (!loadMeshData(vertices, indices)) {
         return false;
     }
+
+    m_data = std::make_unique<MeshData>();
 
     createVertexBuffer(vertices);
     createIndexBuffer(indices);
@@ -27,13 +33,89 @@ void O5MMeshResource::doUnload(void) {
     }
 }
 
-bool O5MMeshResource::loadMeshData(std::string& filePath, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
-    // TODO(you): 用 tinygltf 解析 glTF，填充 vertices/indices
-    return false; // 未实现，返回 false 走加载失败路径，避免缺 return 的 UB
+bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    std::string err;
+    std::string warn;
+
+    bool result = loader.LoadBinaryFromFile(&model, &err, &warn, getfilePath());
+
+    if (!warn.empty()) {
+        printf("Warn: %s\n", warn.c_str());
+    }
+
+    if (!err.empty()) {
+        printf("Err: %s\n", err.c_str());
+    }
+
+    if (!result)
+        return false;
+
+    vertices.clear();
+    indices.clear();
+
+    for (const auto& mesh : model.meshes) {
+        for (const auto& primitive : mesh.primitives) {
+            const float* bufferPos = nullptr;
+            const uint32_t* bufferIndices = nullptr;
+            const float* bufferTexCoordSet0 = nullptr;
+
+            int vertexStride = 0;
+            int indicesByteStride = 0;
+
+            // position
+            if (primitive.attributes.find("POSITION") != primitive.attributes.end()) {
+                const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.find("POSITION")->second];
+                const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+                bufferPos = reinterpret_cast<float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                vertexStride = accessor.ByteStride(view) ? accessor.ByteStride(view) / sizeof(float) : 3;
+            }
+       
+            // index
+            if (primitive.indices >= 0) {
+                const tinygltf::Accessor& accessor = model.accessors[primitive.indices];
+                const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+                bufferIndices = reinterpret_cast<uint32_t*>(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]);
+                indices.resize(accessor.count);
+                switch (accessor.componentType) {
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: 
+                        indicesByteStride = sizeof(uint32_t);
+                        break;
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: 
+                        throw std::runtime_error("this  component type is not supported.");
+                        break;
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: 
+                        throw std::runtime_error("this  component type is not supported.");
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            // texCoord
+            if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
+                const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.find("TEXCOORD_0")->second];
+                const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+                bufferTexCoordSet0 = reinterpret_cast<const float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+            }
+
+            // vertices
+            for (size_t v = 0; v < model.accessors[primitive.attributes.find("POSITION")->second].count; v++) {
+                Vertex vertex{};
+                vertex.m_pos = glm::make_vec3(&bufferPos[v * vertexStride]);
+                vertex.m_color = glm::vec3(1.0f, 1.0f, 1.0f);
+                vertex.m_texCoord = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * 2]) : glm::vec2(0.0f); vertices.push_back(vertex);
+            }
+
+            memcpy(indices.data(), bufferIndices, model.accessors[primitive.indices].count * indicesByteStride);
+        }
+    }
+    return true; 
 }
 
 void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
-    // TODO(you): staging buffer + device local buffer
+    vk::DeviceSize bufferSize = vertices.size() * sizeof(Vertex);
 }
 
 void O5MMeshResource::createIndexBuffer(std::vector<uint32_t>& indices) {

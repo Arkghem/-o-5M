@@ -15,7 +15,9 @@ public:
 
     void createPipeline(const std::vector<vk::Format>& colorFormats,
                         const O5MResourceHandle<O5MShaderResource>& vsSpirv,
-                        const O5MResourceHandle<O5MShaderResource>& fsSpirv);
+                        const O5MResourceHandle<O5MShaderResource>& fsSpirv,
+                        const char* vsEntry = "vertMain",
+                        const char* fsEntry = "fragMain");
 
     void begin(vk::raii::CommandBuffer& cmd, const std::vector<vk::ImageView>& views,
                vk::Extent2D extent);

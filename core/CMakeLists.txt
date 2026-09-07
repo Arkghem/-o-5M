@@ -18,20 +18,9 @@ find_package(glm REQUIRED)
 # ---------------------------------------------------------------------------
 # Library target
 # ---------------------------------------------------------------------------
+file(GLOB SRC "Src/*.cpp")
 add_library(o5m_core STATIC
-    Src/O5MComponent.cpp
-    Src/O5MEntity.cpp
-    Src/O5MMeshComponent.cpp
-    Src/O5MResource.cpp
-    Src/O5MResourceManager.cpp
-    Src/O5MTextureResource.cpp
-    Src/O5MRendergraph.cpp
-    Src/O5MShaderCompiler.cpp
-    Src/O5MPipeline.cpp
-    # Add new core sources here as the ECS grows, e.g.:
-    # Src/O5MEntity.cpp
-    # Src/O5MEvent.cpp
-    # Src/O5MCameraComponent.cpp
+    ${SRC}
 )
 
 # PUBLIC = this include directory propagates to every target that links
@@ -50,7 +39,7 @@ target_link_libraries(o5m_core PRIVATE tinygltf)
 find_package(Vulkan REQUIRED)
 target_link_libraries(o5m_core PUBLIC Vulkan::Vulkan)
 
-# shaderc — 运行时 GLSL -> SPIR-V。只被 Src/O5MShaderCompiler.cpp 使用，
+# shaderc — 运行时 GLSL -> SPIR-V。只被 Src/O5MShaderResource.cpp 使用，
 # 头文件不暴露 shaderc 类型，所以 PRIVATE。
 # 根 CMakeLists 的 shaderc 查找在 if(O5M_VULKAN) 里，core 不依赖该开关，自己找。
 find_package(shaderc QUIET)
