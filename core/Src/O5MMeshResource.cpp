@@ -16,20 +16,20 @@ bool O5MMeshResource::doLoad(void) {
         return false;
     }
 
-    m_data = std::make_unique<MeshData>();
+    m_meshData= std::make_unique<MeshData>();
 
     createVertexBuffer(vertices);
     createIndexBuffer(indices);
 
-    m_data->m_vertexCount = static_cast<uint32_t>(vertices.size());
-    m_data->m_indexCount = static_cast<uint32_t>(indices.size());
+    m_meshData->m_vertexCount = static_cast<uint32_t>(vertices.size());
+    m_meshData->m_indexCount = static_cast<uint32_t>(indices.size());
 
     return true;
 }
 
 void O5MMeshResource::doUnload(void) {
     if (isloaded()) {
-        m_data.reset();
+        m_meshData.reset();
     }
 }
 
@@ -39,7 +39,7 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
     std::string err;
     std::string warn;
 
-    bool result = loader.LoadBinaryFromFile(&model, &err, &warn, getfilePath());
+    bool result = loader.LoadBinaryFromMemory(&model, &err, &warn, reinterpret_cast<const unsigned char*>(getData()),getSize());
 
     if (!warn.empty()) {
         printf("Warn: %s\n", warn.c_str());
@@ -116,8 +116,29 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
 
 void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
     vk::DeviceSize bufferSize = vertices.size() * sizeof(Vertex);
+
+    auto [stagingBuffer, stagingMemory] = 
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible);
+
+    void* dataStaging = stagingMemory.mapMemory(0, bufferSize);
+    memcpy(dataStaging, vertices.data(), bufferSize);
+    stagingMemory.unmapMemory();
+
+    std::tie(m_meshData->m_vertexBuffer, m_meshData->m_vertexBufferMemory) = 
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    //need a copyBuffer fuction
 }
 
 void O5MMeshResource::createIndexBuffer(std::vector<uint32_t>& indices) {
-    // TODO(you): 同上
+    vk::DeviceSize bufferSize = indices.size() * sizeof(uint32_t);
+    
+    auto [stagingBuffer, stagingMemory] = 
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible);
+
+    void* dataStaging = stagingMemory.mapMemory(0, bufferSize);
+    stagingMemory.unmapMemory();
+
+    std::tie(m_meshData->m_indexBuffer, m_meshData->m_indexBuffer) = 
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
 }

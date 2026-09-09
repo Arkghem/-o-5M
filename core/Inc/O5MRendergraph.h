@@ -29,14 +29,12 @@ public:
         std::string name;
         ResourceKind kind = ResourceKind::Image;
 
-        // image 字段
         vk::Format format;
         vk::Extent2D extent;
         vk::ImageUsageFlags usage;
         vk::ImageLayout initialLayout;
         vk::ImageLayout finalLayout;
 
-        // buffer 字段
         vk::DeviceSize size = 0;
         vk::BufferUsageFlags bufferUsage;
         vk::MemoryPropertyFlags memoryProperties;

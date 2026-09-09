@@ -4,32 +4,27 @@
 #include "shaderc/shaderc.hpp"
 
 bool O5MShaderResource::doLoad(void) {
-    std::string glslSource = readFile(getfilePath());
-    if (glslSource.empty()) {
-        return false;
-    }
+    assert(getData() != nullptr);
 
-    std::vector<uint32_t> code = compileGLSL(glslSource, getfilePath());
+    char* casted_data = static_cast<char*>(getData());
+    std::string glslSource(casted_data);
 
-    createShaderModule(code);
-
-    return true;
-}
-
-void O5MShaderResource::doUnload(void) {
-    if (isloaded()) {
-        m_data.reset();
-    }
-}
-
-void O5MShaderResource::createShaderModule(const std::vector<uint32_t>& code) {
+    std::vector<uint32_t> code = compileGLSL(glslSource, getName());
+    
     vk::ShaderModuleCreateInfo shaderModuleCreateInfo {
         .codeSize = code.size() * sizeof(uint32_t),
         .pCode = code.data(),
     };
 
-    m_data = std::make_unique<ShaderData>(m_device.createShaderModule(shaderModuleCreateInfo));
+    m_shaderModule = m_device.getDevice().createShaderModule(shaderModuleCreateInfo);
+
+    return true;
 }
+
+void O5MShaderResource::doUnload(void) {
+    m_shaderModule.clear();
+}
+
 
 std::vector<uint32_t> O5MShaderResource::compileGLSL(const std::string& glslSource,
                                   const std::string& debugName) {

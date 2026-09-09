@@ -5,29 +5,27 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "O5MResource.h"
+#include "O5MDevice.h"
 
 class O5MShaderResource : public O5MResource {
 private:
-    struct ShaderData {
-        vk::raii::ShaderModule m_shaderModule;
-    };
+    vk::raii::ShaderModule m_shaderModule = nullptr;
     vk::ShaderStageFlagBits m_stage;
+
+    const O5MDevice& m_device;
 public:
     O5MShaderResource(void) = delete;
-    [[nodiscard]] O5MShaderResource(const std::string& filePath, vk::ShaderStageFlagBits stage, vk::raii::Device& device):
-        O5MResource(filePath, device),
-        m_stage(stage){}
+    [[nodiscard]] O5MShaderResource(const std::string& name, vk::ShaderStageFlagBits stage, const O5MDevice& device):
+        O5MResource(name),
+        m_stage(stage),
+        m_device(device){}
     ~O5MShaderResource() override { unload(); };
-private:
-    std::unique_ptr<ShaderData> m_data;
 public:
-    vk::ShaderModule getShaderModule(void) const { return *m_data->m_shaderModule; }
+    vk::ShaderModule getShaderModule(void) const { return m_shaderModule; }
     vk::ShaderStageFlags getStage(void) const { return m_stage; }
 private:
-    bool doLoad(void) override;
+    bool doLoad(void) override; //create vulkan resource
     void doUnload(void) override;
-
-    void createShaderModule(const std::vector<uint32_t>& code);
 
     std::vector<uint32_t> compileGLSL(const std::string& glslSource,
                                       const std::string& debugName = "shader");

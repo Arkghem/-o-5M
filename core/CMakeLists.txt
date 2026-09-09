@@ -26,7 +26,7 @@ add_library(o5m_core STATIC
 # PUBLIC = this include directory propagates to every target that links
 # o5m_core (currently the `o5m` executable in main/).
 target_include_directories(o5m_core PUBLIC Inc)
-
+target_include_directories(o5m_core PUBLIC ../test/)
 target_link_libraries(o5m_core PUBLIC glm::glm)
 
 # tinygltf — 只在 Src/O5MMeshResource.cpp（#include <tiny_gltf.h>）中使用，

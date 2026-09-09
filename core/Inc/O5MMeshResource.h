@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "O5MResource.h"
+#include "O5MDevice.h"
 
 class O5MMeshResource : public O5MResource {
 private:
@@ -29,21 +30,23 @@ private:
         uint32_t m_indexCount = 0;
     };
 
-    vk::raii::Device m_device = nullptr;
-    std::unique_ptr<MeshData> m_data;
+    O5MDevice& m_device;
+    std::unique_ptr<MeshData> m_meshData;
 public:
-    O5MMeshResource(const std::string& filePath, vk::raii::Device& device) : O5MResource(filePath, device){};
+    O5MMeshResource(const std::string& name, O5MDevice& device) : 
+        O5MResource(name),
+        m_device(device){};
     ~O5MMeshResource() override { unload(); };
 public:
-    vk::Buffer getVertexBuffer(void) const { return *m_data->m_vertexBuffer; }
-    vk::DeviceMemory getVertexBufferMemory(void) const { return *m_data->m_vertexBufferMemory; }
-    vk::DeviceSize getVertexBufferOffset(void) const { return m_data->m_vertexBufferOffset; }
-    uint32_t getVertexCount(void) const { return m_data->m_vertexCount; }
+    vk::Buffer getVertexBuffer(void) const { return *m_meshData->m_vertexBuffer; }
+    vk::DeviceMemory getVertexBufferMemory(void) const { return *m_meshData->m_vertexBufferMemory; }
+    vk::DeviceSize getVertexBufferOffset(void) const { return m_meshData->m_vertexBufferOffset; }
+    uint32_t getVertexCount(void) const { return m_meshData->m_vertexCount; }
 
-    vk::Buffer getIndexBuffer(void) const { return *m_data->m_indexBuffer; }
-    vk::DeviceMemory getIndexBufferMemory(void) const { return *m_data->m_indexBufferMemory; }
-    vk::DeviceSize getIndexBufferOffset(void) const { return m_data->m_indexBufferOffset; }
-    uint32_t getIndexCount(void) const { return m_data->m_indexCount; }
+    vk::Buffer getIndexBuffer(void) const { return *m_meshData->m_indexBuffer; }
+    vk::DeviceMemory getIndexBufferMemory(void) const { return *m_meshData->m_indexBufferMemory; }
+    vk::DeviceSize getIndexBufferOffset(void) const { return m_meshData->m_indexBufferOffset; }
+    uint32_t getIndexCount(void) const { return m_meshData->m_indexCount; }
     vk::Device getDevice(void) const { return *m_device; };
 private:
     bool doLoad(void) override;

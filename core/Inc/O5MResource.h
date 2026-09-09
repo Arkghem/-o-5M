@@ -1,59 +1,39 @@
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-
 #ifndef __O5MRESOURCE__H
 #define __O5MRESOURCE__H
 
 #include <cstdint>
+#include <atomic>
 #include <string>
-#include <fstream>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_raii.hpp>
 
-#include "O5MResourceManager.h"
 
 class O5MResource {
-protected:
-    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties){
-        vk::BufferCreateInfo bufferInfo {
-            .size = size,
-            .usage = usage,
-            .sharingMode = vk::SharingMode::eExclusive
-        };
-
-        vk::raii::Buffer buffer = vk::raii::Buffer(m_device, bufferInfo);
-        
-    }
-
-    std::string readFile(const std::string& filePath) {
-        std::ifstream file(filePath, std::ios::ate | std::ios::binary);
-
-        if (!file.is_open()) {
-            throw std::runtime_error("failed to open file: " + filePath);
-        }
-
-        size_t fileSize = (size_t)file.tellg();
-        std::vector<char> buffer(fileSize);
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-        file.close();
-        return std::string(buffer.begin(), buffer.end());
-    }
 private:
-    std::string m_filePath;
-    vk::raii::Device& m_device;
+    static inline std::atomic<uint64_t> nextId = 1;
+
+    uint64_t resourceId;
+    std::string name;
+    void* data;
+    size_t size;
+
     bool loaded = false;
-
 public:
-    explicit O5MResource(const std::string filePath, vk::raii::Device& device) : 
-        m_filePath(filePath),
-        m_device(device) {}
+    explicit O5MResource(const std::string& name):
+        name(name), 
+        resourceId(nextId.fetch_add(1, std::memory_order_relaxed))
+    {}
     virtual ~O5MResource() = default;
+public:
+    bool isloaded(void) const { return loaded; }//why don't just check if the data is nullptr?
+    uint64_t getResourceId(void) const { return resourceId; }
+    std::string getName(void) const { return name; }
+    void setData(void* data, size_t byteSize) {
+        this->data = data;
+        this->size = byteSize;
+    }
 
-public:
-    const std::string& getfilePath(void) const { return m_filePath; }
-    vk::raii::Device& getDevice(void) const { return m_device; }
-    bool isloaded(void) const { return loaded; }
-public:
+    void* getData(void) const { return data; }
+    size_t getSize(void) const { return size; }
+
     bool load(void) {
         loaded = doLoad();
         return loaded;
@@ -71,23 +51,19 @@ protected:
 template <typename T>
 class O5MResourceHandle {
 private:
-    O5MResourceManager&  resourceManager = O5MResourceManager::getInstance();
-    uint32_t resourceId = 0;
+    const uint32_t index;
+    uint32_t generation;
 public:
-    O5MResourceHandle(void) = delete;
-    [[nodiscard]] O5MResourceHandle(const std::string& filePath);
-public:
+    O5MResourceHandle(void) = default;
+    [[nodiscard]]O5MResourceHandle(uint32_t index, uint32_t generation) : 
+        index(index), generation(generation) {}
     T* operator->(void) const { return get(); }
-    T& operator&(void) const { return *get(); }
+    T& operator*(void) const { return *get(); }
     operator bool(void) const { return isValid(); }
 public:
     T* get() const;
 
-    bool isValid(void) const { return resourceId == 0; };
-
-    const uint32_t getId(void) const {
-        return resourceId;
-    }
+    bool isValid(void) const { return index != 0; };
 };
 
 #endif //!__O5MRESOURCE__H

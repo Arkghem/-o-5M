@@ -7,55 +7,46 @@
 #include <filesystem>
 #include <thread>
 
-class O5MResource;
+#include "O5MResource.h"
 
 class O5MResourceManager {
-private:
-    O5MResourceManager(void) = default;
-
-    struct O5MResourceData {
+public:
+    struct Slot{
         std::shared_ptr<O5MResource> resource;
         int refCount;
         bool isPreloaded;
+        uint32_t generation;
+        uint32_t nextFreeIndex;
     };
+private:
+    O5MResourceManager(void) = default;
 
-    std::unordered_map<uint32_t, O5MResourceData> resources;
-    std::unordered_map<std::string, uint32_t> pathToId;
+    uint32_t freeHead = 0;
 
-    // --Multithread part
-    std::unordered_map<uint32_t, std::filesystem::file_time_type> fileTimestamps;
+    std::vector<Slot> resources; //use stl vector is definitely a bug to fix, but no need to worry toomuch
+    std::unordered_map<uint64_t, uint32_t> idToIndex;
+
+    // --Multithread part //no we got delete all of this 
+    std::unordered_map<uint64_t, std::filesystem::file_time_type> fileTimestamps;
     std::thread watcherThread;
     std::atomic<bool> running = false;
 
-    // --Allocate id part
-    std::atomic<uint32_t> nextId = 1;
 public:
     static O5MResourceManager& getInstance(void) {
         static O5MResourceManager instance;
         return instance;
     }
 
-    uint32_t allocateId(void) {
-        return nextId.fetch_add(1, std::memory_order_relaxed);
-    }
+    bool hasResource(const uint64_t resourceId) const;
 
     template<typename T>
-    T* getResource(const uint32_t resourceId) ;
+    O5MResourceHandle<T> acquire(const uint64_t resourceId);
 
-    bool hasResource(const uint32_t resourceId);
+    template<typename T, typename... Args> 
+    O5MResourceHandle<T> create(Args&&... args);
 
-    void release(const uint32_t resourceId);    
-
-    template<typename T>
-    uint32_t load(const std::string& filePath);
-
-    void unloadAll(void);
-
-    void startWatcher(void);
-    void stopWatcher(void);
-private:
-    void updateWatcherThread(void);
-    void reloadResource(const uint32_t resourceId);
+    Slot& getResource(const uint32_t index);
+    void release(const uint64_t resourceId);
 };
 
 

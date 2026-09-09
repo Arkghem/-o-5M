@@ -1,11 +1,13 @@
 #include "O5MResource.h"
+#include "O5MResourceManager.h"
 
-template<typename T>
-O5MResourceHandle<T>::O5MResourceHandle(const std::string& filePath) {
-    resourceId = O5MResourceManager::getInstance().load<T>(filePath);
-}
+#include <cassert>
 
-template<typename T>
 T* O5MResourceHandle<T>::get(void) const {
-    return resourceManager.getResource<T>(resourceId);
+    static_assert(std::is_base_of<O5MResource, T>::value, "T must be derived from O5MResource");
+
+    auto& resourceManager = O5MResourceManager::getInstance();
+    auto& slot = resourceManager.getResource(index);
+    
+    return slot.generation == generation ? std::reinterpret_pointer_cast<T>(slot.resource) : nullptr;
 }
