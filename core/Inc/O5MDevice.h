@@ -20,6 +20,7 @@ public:
     vk::raii::Device& getDevice(void) { return m_device; }
     const vk::raii::Device& getDevice(void) const { return m_device; }
     vk::raii::PhysicalDevice& getPhysicalDevice(void) { return m_physicalDevice; }
+    vk::raii::Queue& getQueue(void) { return m_queue; } // graphics queue（构造时选定）
 
     // 按属性过滤 memory type。memoryProperties 在构造时查一次缓存，
     // 物理设备属性在进程生命周期内不变，每次调用重新 getMemoryProperties() 是浪费。

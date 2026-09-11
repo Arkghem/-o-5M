@@ -15,6 +15,7 @@
 #include <string_view>
 #include <vector>
 
+#include "O5MDevice.h"
 #include "O5MRendergraph.h"
 
 namespace {
@@ -100,7 +101,7 @@ int main() {
         std::cout << "[ok] physical device: "
                   << physicalDevice.getProperties().deviceName << "\n";
 
-        // ---- 3. device + graphics queue ----
+        // ---- 3. O5MDevice：设备层接管 queue / 复制命令池 / 分配账本 ----
         const uint32_t graphicsFamily = findGraphicsQueueFamily(*physicalDevice);
         float queuePriority = 1.0f;
         vk::DeviceQueueCreateInfo queueInfo({}, graphicsFamily, 1, &queuePriority);
@@ -110,18 +111,18 @@ int main() {
         deviceInfo.setQueueCreateInfos(queueInfo)
                   .setPEnabledExtensionNames(kDeviceExtensions)
                   .setPNext(&dynamicRenderingFeatures);
-        vk::raii::Device device(physicalDevice, deviceInfo);
-        vk::raii::Queue queue(device, graphicsFamily, 0);
+        O5MDevice o5mDevice(physicalDevice, vk::raii::Device(physicalDevice, deviceInfo),
+                            graphicsFamily);
         std::cout << "[ok] device + graphics queue (family " << graphicsFamily << ")\n";
 
         // ---- 4. command pool + one command buffer ----
-        vk::raii::CommandPool commandPool(device, { {}, graphicsFamily });
+        vk::raii::CommandPool commandPool(o5mDevice.getDevice(), { {}, graphicsFamily });
         vk::raii::CommandBuffers commandBuffers(
-            device, { *commandPool, vk::CommandBufferLevel::ePrimary, 1 });
+            o5mDevice.getDevice(), { *commandPool, vk::CommandBufferLevel::ePrimary, 1 });
 
         // ---- 5. rendergraph 最小管线 ----
         //   render(写 rt) -> composite(读 rt)
-        O5MRendergraph graph(device, *physicalDevice);
+        O5MRendergraph graph(o5mDevice);
 
         graph.addResource("rt", vk::Format::eR8G8B8A8Unorm, { 64, 64 },
                           vk::ImageUsageFlagBits::eColorAttachment |
@@ -143,8 +144,8 @@ int main() {
         std::cout << "[ok] graph compiled\n";
 
         // ---- 6. 执行一帧并等待完成 ----
-        graph.execute(commandBuffers[0], *queue);
-        device.waitIdle();
+        graph.execute(commandBuffers[0], *o5mDevice.getQueue());
+        o5mDevice.getDevice().waitIdle();
         std::cout << "[ok] submitted + fence waited\n";
 
         std::cout << "[PASS] rhi_verify: rendergraph 全链路 OK\n";

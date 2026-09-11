@@ -146,17 +146,6 @@ vk::PipelineStageFlags stageFlagsFromLayout(vk::ImageLayout layout) {
     }
 }
 
-uint32_t O5MRendergraph::findMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties) const {
-    vk::PhysicalDeviceMemoryProperties memProperties = m_physicalDevice.getMemoryProperties();
-
-    for (size_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if(typeBits & (1u << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-            return i;
-    }
-
-    throw std::runtime_error("findMemoryType: no suitable memory type found");
-}
-
 void O5MRendergraph::addResource(const std::string& name, vk::Format format, vk::Extent2D extent,
                                  vk::ImageUsageFlags usage, vk::ImageLayout initialLayout,
                                  vk::ImageLayout finalLayout) {
@@ -241,58 +230,24 @@ void O5MRendergraph::compile(void) {
 
     for (auto& [name, resource] : m_resources) {
         if (resource.kind == ResourceKind::Buffer) {
-            vk::BufferCreateInfo bufInfo{
-                .size = resource.size,
-                .usage = resource.bufferUsage,
-                .sharingMode = vk::SharingMode::eExclusive
-            };
-
-            resource.buffer = vk::raii::Buffer(m_device, bufInfo);
-            auto memReqs = resource.buffer.getMemoryRequirements();
-            uint32_t memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, resource.memoryProperties);
-            vk::MemoryAllocateInfo memAllocInfo{
-                .allocationSize = memReqs.size,
-                .memoryTypeIndex = memoryTypeIndex
-            };
-
-            resource.memory = vk::raii::DeviceMemory(m_device, memAllocInfo);
-            resource.buffer.bindMemory(*resource.memory, 0);
+            // Device 立法：buffer 创建 + 内存分配 + 绑定只走 O5MDevice
+            std::tie(resource.buffer, resource.memory) = m_device.createBuffer(
+                resource.size, resource.bufferUsage, resource.memoryProperties);
 
             continue;
         }
 
-        vk::ImageCreateInfo imageInfo;
-        imageInfo.setImageType(vk::ImageType::e2D)
-                 .setFormat(resource.format)
-                 .setExtent({resource.extent.width, resource.extent.height, 1})
-                 .setMipLevels(1)
-                 .setArrayLayers(1)
-                 .setSamples(vk::SampleCountFlagBits::e1)
-                 .setTiling(vk::ImageTiling::eOptimal)
-                 .setUsage(resource.usage)
-                 .setSharingMode(vk::SharingMode::eExclusive)
-                 .setInitialLayout(resource.initialLayout);
+        std::tie(resource.image, resource.memory) = m_device.createImage2D(
+            resource.format, resource.extent, 1, vk::ImageTiling::eOptimal,
+            resource.usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-        resource.image = m_device.createImage(imageInfo);
-
-        vk::MemoryRequirements memReqs = resource.image.getMemoryRequirements();
-
-        vk::MemoryAllocateInfo allocInfo;
-        allocInfo.setAllocationSize(memReqs.size)
-                 .setMemoryTypeIndex(findMemoryType(
-                     memReqs.memoryTypeBits,
-                     vk::MemoryPropertyFlagBits::eDeviceLocal));
-
-        resource.memory = m_device.allocateMemory(allocInfo);
-        resource.image.bindMemory(resource.memory, 0);
-        
         vk::ImageViewCreateInfo imageViewInfo;
         imageViewInfo.setImage(resource.image)
                      .setViewType(vk::ImageViewType::e2D)
                      .setFormat(resource.format)
                      .setSubresourceRange({aspectFromFormat(resource.format), 0, 1, 0, 1});
 
-        resource.imageView = m_device.createImageView(imageViewInfo);
+        resource.imageView = m_device.getDevice().createImageView(imageViewInfo);
     }
 }
 

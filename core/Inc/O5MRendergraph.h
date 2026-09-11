@@ -6,6 +6,8 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
+#include "O5MDevice.h"
+
 class O5MRendergraph {
 public:
     enum class ResourceKind { Image, Buffer };
@@ -59,15 +61,9 @@ private:
     std::vector<vk::raii::Semaphore> m_semaphores;
     std::vector<std::pair<size_t,size_t>> m_semaphoreSignalWaitPairs;//signal pass, waiting pass, I thought we need two semaphore signals
 
-    vk::raii::Device& m_device;
-    vk::PhysicalDevice m_physicalDevice; // findMemoryType 需要 memoryProperties
+    O5MDevice& m_device; // GPU 对象创建/内存分配的唯一出口（见 O5MDevice 立法）
 public:
-    O5MRendergraph(vk::raii::Device& device, vk::PhysicalDevice physicalDevice)
-        : m_device(device), m_physicalDevice(physicalDevice) {}
-
-    // 按属性过滤 memory type。 teaching note: memoryTypes 来自
-    // vkGetPhysicalDeviceMemoryProperties，typeBits 是 bitmask，第 i 位为 1 表示该 type 可用。
-    uint32_t findMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties) const;
+    explicit O5MRendergraph(O5MDevice& device) : m_device(device) {}
 
     ResourceDesc* getResource(const std::string& name) {
         auto it = m_resources.find(name);
