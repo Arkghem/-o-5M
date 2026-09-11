@@ -12,6 +12,8 @@ class O5MRendergraph {
 public:
     enum class ResourceKind { Image, Buffer };
 
+    //ResourceDesc should not hold any specific vulkan resource
+    //TODO clarify responsibilites of this ResourceDesc
     struct ResourceDesc {
         ResourceDesc& operator=(ResourceDesc& other) {
             name = other.name;

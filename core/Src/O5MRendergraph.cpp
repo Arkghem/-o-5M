@@ -5,6 +5,9 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_format_traits.hpp>
 
+//SHIT it really sucks, I think the whole rendergraph part might need to be reconstruct
+//But anyway, let's make it just works
+
 vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
     switch (fmt) {
         case vk::Format::eD32Sfloat://high persion depth, revered-z
@@ -33,10 +36,15 @@ vk::ImageLayout readLayoutFromUsage(vk::ImageUsageFlags usage, vk::Format fmt) {
             return vk::ImageLayout::eDepthReadOnlyOptimal;
         return vk::ImageLayout::eShaderReadOnlyOptimal;
     } else {
-        if (usage & vk::ImageUsageFlagBits::eColorAttachment)
-            return vk::ImageLayout::eColorAttachmentOptimal;
+        // 读侧优先级：sampled > transferSrc > attachment。
+        // 一个资源常同时带 ColorAttachment|Sampled（先渲染后采样），读它时是采样，
+        // 必须给 ShaderReadOnly；只有"只作为 attachment 用"的资源才轮到 attachment 布局。
+        if (usage & vk::ImageUsageFlagBits::eSampled)
+            return vk::ImageLayout::eShaderReadOnlyOptimal;
         else if (usage & vk::ImageUsageFlagBits::eTransferSrc)
             return vk::ImageLayout::eTransferSrcOptimal;
+        else if (usage & vk::ImageUsageFlagBits::eColorAttachment)
+            return vk::ImageLayout::eColorAttachmentOptimal;
         return vk::ImageLayout::eShaderReadOnlyOptimal;
     }
 }
@@ -230,7 +238,6 @@ void O5MRendergraph::compile(void) {
 
     for (auto& [name, resource] : m_resources) {
         if (resource.kind == ResourceKind::Buffer) {
-            // Device 立法：buffer 创建 + 内存分配 + 绑定只走 O5MDevice
             std::tie(resource.buffer, resource.memory) = m_device.createBuffer(
                 resource.size, resource.bufferUsage, resource.memoryProperties);
 
@@ -276,6 +283,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .buffer = *resource.buffer,
+                    .size = VK_WHOLE_SIZE,
                 };
 
                 commandBuffer.pipelineBarrier(
@@ -325,6 +333,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .buffer = *resource.buffer,
+                    .size = VK_WHOLE_SIZE,
                 };
 
                 commandBuffer.pipelineBarrier(
@@ -370,7 +379,8 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                        .setDstAccessMask(accessFlagFromBufferUsage(resource.bufferUsage, true))
                        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                       .setBuffer(*resource.buffer);                
+                       .setBuffer(*resource.buffer)
+                       .setSize(VK_WHOLE_SIZE);                
 
                 commandBuffer.pipelineBarrier(
                     bufferLastStates[resource.name].second,
@@ -409,9 +419,6 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
     vk::SubmitInfo submitInfo;
     submitInfo.setCommandBuffers(*commandBuffer);
 
-    // fence：CPU-GPU 同步点。submit 后由调用方 waitForFences + resetFence，
-    // 这就是 frames-in-flight 的最小雏形（每帧一个 fence）。
-    // TODO(you, Phase 3): rhi_verify 改成 fence 等待，替换 device.waitIdle()。
+    //TODO Fence wait modification for cpu side
     queue.submit(submitInfo, fence ? **fence : vk::Fence{ nullptr });
-    //草泥马的，这代码真是一坨。有 bug。先干别的吧。
 }

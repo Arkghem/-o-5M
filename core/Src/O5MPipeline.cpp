@@ -2,19 +2,18 @@
 #include "O5MPipeline.h"
 
 void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
-                                 const O5MResourceHandle<O5MShaderResource>& vsSpirv,
-                                 const O5MResourceHandle<O5MShaderResource>& fsSpirv,
-                                 const char* vsEntry,
-                                 const char* fsEntry) {
+                                 vk::ShaderModule vs, vk::ShaderModule fs,
+                                 const char* vsEntry, const char* fsEntry,
+                                 vk::DescriptorSetLayout setLayout) {
     vk::PipelineShaderStageCreateInfo vsState {
         .stage = vk::ShaderStageFlagBits::eVertex,
-        .module = vsSpirv->getShaderModule(),
-        .pName = vsEntry 
+        .module = vs,
+        .pName = vsEntry
     };
 
     vk::PipelineShaderStageCreateInfo fsState {
         .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = fsSpirv->getShaderModule(),
+        .module = fs,
         .pName = fsEntry
     };
 
@@ -49,8 +48,12 @@ void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
 
     std::vector<vk::PipelineColorBlendAttachmentState> colorBlendAttachmentStates;
     for (auto colorformat : colorFormats) {
+        // colorWriteMask 必须显式给：指定初始化会把没写的成员清零，
+        // mask=0 意味着所有通道被屏蔽——FS 白跑，attachment 只剩 clear 色
         vk::PipelineColorBlendAttachmentState colorBlendAttachmentState{
-            .blendEnable = vk::False
+            .blendEnable = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
         };
 
         colorBlendAttachmentStates.push_back(colorBlendAttachmentState);
@@ -61,11 +64,21 @@ void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
         .pAttachments = colorBlendAttachmentStates.data()
     };
 
+    // setLayout 为空时建空 layout；shader 用了 descriptor 却不在 layout 里声明，
+    // validation 会报 layout-07988，MoltenVK 直接编不出 MSL
     vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{
-
+        .setLayoutCount = setLayout ? 1u : 0u,
+        .pSetLayouts = &setLayout
     };
 
     m_pipelineLayout = m_device.getDevice().createPipelineLayout(pipelineLayoutCreateInfo);
+
+    // 普通 dynamic viewport/scissor 仍要求 viewportState 提供 count；
+    // 只有 *_WITH_COUNT 动态态才允许 nullptr
+    vk::PipelineViewportStateCreateInfo viewportState{
+        .viewportCount = 1,
+        .scissorCount = 1
+    };
 
     vk::PipelineRenderingCreateInfo renderingInfo {
         .colorAttachmentCount = static_cast<uint32_t>(colorFormats.size()),
@@ -78,7 +91,7 @@ void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
-        .pViewportState = nullptr,
+        .pViewportState = &viewportState,
         .pRasterizationState = &raterizationInfo,
         .pMultisampleState = &multisampling,
         .pColorBlendState = &colorBlendingInfo,
@@ -120,4 +133,8 @@ void O5MPipeline::begin(vk::raii::CommandBuffer& cmd, const std::vector<vk::Imag
 
 void O5MPipeline::end(vk::raii::CommandBuffer& cmd) {
     cmd.endRendering();
+}
+
+void O5MPipeline::bindDescriptorSet(vk::raii::CommandBuffer& cmd, vk::DescriptorSet set) {
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout, 0, set, nullptr);
 }

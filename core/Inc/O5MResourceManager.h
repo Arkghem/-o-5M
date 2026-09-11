@@ -21,7 +21,7 @@ public:
 private:
     O5MResourceManager(void) = default;
 
-    uint32_t freeHead = 0;
+    uint32_t freeHead = 0xFFFF;
 
     std::vector<Slot> resources; //use stl vector is definitely a bug to fix, but no need to worry toomuch
     std::unordered_map<uint64_t, uint32_t> idToIndex;
