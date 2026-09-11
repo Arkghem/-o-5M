@@ -68,7 +68,9 @@ vcpkg_installed/
 Testing/
 .cache/
 
+# macOS
+.DS_Store
+
+chorma.log
 .zcode/
 .vectorcode/
-./AGENTS.md
-./PHASE-VULKAN.md
