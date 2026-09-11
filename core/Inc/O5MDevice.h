@@ -14,8 +14,7 @@ class O5MDevice {
 public:
     // queueFamilyIndex：copyBuffer 等"设备自执行"操作要用的 graphics 队列族，
     // 由 bootstrap（rhi_verify 的 findGraphicsQueueFamily）选定后传入。
-    O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,
-              uint32_t queueFamilyIndex);
+    O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,uint32_t queueFamilyIndex);
 
 public:
     vk::raii::Device& getDevice(void) { return m_device; }
@@ -29,8 +28,11 @@ public:
     // 线性资源：VBO/IBO/UBO/SSBO/Staging 全走这里。
     // 内部 = createBuffer + getMemoryRequirements + allocateMemory + bindMemory。
     std::pair<vk::raii::Buffer, vk::raii::DeviceMemory>
-    createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-                 vk::MemoryPropertyFlags properties);
+    createBuffer(
+        vk::DeviceSize size,
+        vk::BufferUsageFlags usage,
+        vk::MemoryPropertyFlags properties
+    );
 
     std::pair<vk::raii::Image, vk::raii::DeviceMemory>
         createImage2D(vk::Format format, vk::Extent2D extent,
@@ -43,6 +45,11 @@ public:
     void copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& dst,
                     vk::DeviceSize size);
 
+    // 一次性上传（staging buffer → image，纹理上传的标准路径）：
+    // 内部临时 cmd 记录 vkCmdCopyBufferToImage → 提交 → waitIdle，阻塞式，仅供加载期。
+    // 拷贝 mip 0 / 单层；调用方负责用屏障把 dst 转到 eTransferDstOptimal 布局。
+    void copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::Image& dst,
+                           vk::Format format, vk::Extent2D extent);
 
 
 

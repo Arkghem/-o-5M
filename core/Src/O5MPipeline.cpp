@@ -65,7 +65,7 @@ void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
 
     };
 
-    m_pipelineLayout = m_device.createPipelineLayout(pipelineLayoutCreateInfo);
+    m_pipelineLayout = m_device.getDevice().createPipelineLayout(pipelineLayoutCreateInfo);
 
     vk::PipelineRenderingCreateInfo renderingInfo {
         .colorAttachmentCount = static_cast<uint32_t>(colorFormats.size()),
@@ -86,7 +86,7 @@ void O5MPipeline::createPipeline(const std::vector<vk::Format>& colorFormats,
         .layout = *m_pipelineLayout,
     };
 
-    m_pipeline = m_device.createGraphicsPipeline(nullptr, pipelineInfo);
+    m_pipeline = m_device.getDevice().createGraphicsPipeline(nullptr, pipelineInfo);
 }
 
 void O5MPipeline::begin(vk::raii::CommandBuffer& cmd, const std::vector<vk::ImageView>& views,

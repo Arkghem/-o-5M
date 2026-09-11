@@ -118,27 +118,30 @@ void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
     vk::DeviceSize bufferSize = vertices.size() * sizeof(Vertex);
 
     auto [stagingBuffer, stagingMemory] = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible);
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* dataStaging = stagingMemory.mapMemory(0, bufferSize);
     memcpy(dataStaging, vertices.data(), bufferSize);
     stagingMemory.unmapMemory();
 
     std::tie(m_meshData->m_vertexBuffer, m_meshData->m_vertexBufferMemory) = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    //need a copyBuffer fuction
+    m_device.copyBuffer(stagingBuffer, m_meshData->m_vertexBuffer, bufferSize);
 }
 
 void O5MMeshResource::createIndexBuffer(std::vector<uint32_t>& indices) {
     vk::DeviceSize bufferSize = indices.size() * sizeof(uint32_t);
     
     auto [stagingBuffer, stagingMemory] = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible);
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* dataStaging = stagingMemory.mapMemory(0, bufferSize);
+    memcpy(dataStaging, indices.data(), bufferSize);
     stagingMemory.unmapMemory();
 
-    std::tie(m_meshData->m_indexBuffer, m_meshData->m_indexBuffer) = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    std::tie(m_meshData->m_indexBuffer, m_meshData->m_indexBufferMemory) = 
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer |  vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    m_device.copyBuffer(stagingBuffer, m_meshData->m_indexBuffer, bufferSize);
 }

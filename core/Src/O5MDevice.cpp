@@ -59,8 +59,11 @@ void O5MDevice::accountAllocation(void) {
 }
 
 std::pair<vk::raii::Buffer, vk::raii::DeviceMemory>
-O5MDevice::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-                        vk::MemoryPropertyFlags properties) {
+O5MDevice::createBuffer(
+    vk::DeviceSize size,
+    vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags properties
+) {
     vk::BufferCreateInfo bufferInfo {
         .size = size,
         .usage = usage,
@@ -144,5 +147,41 @@ void O5MDevice::copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& 
     m_queue.submit(submitInfo);
     // v1 阻塞等队列空闲：简单且正确，专供加载期。
     // 升级路径：submit 带 fence → 下次 update() 收割，上传不再阻塞主线程。
+    m_queue.waitIdle();
+}
+
+void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::Image& dst,
+                                  vk::Format format, vk::Extent2D extent) {
+    vk::CommandBufferAllocateInfo allocInfo {
+        .commandPool = *m_copyCommandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1
+    };
+
+    vk::raii::CommandBuffers commandBuffers(m_device, allocInfo);
+    vk::raii::CommandBuffer& cmd = commandBuffers.front();
+
+    cmd.begin(vk::CommandBufferBeginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+    });
+
+    // bufferRowLength/bufferImageHeight 缺省为 0 = 像素在 buffer 里紧密排列
+    vk::BufferImageCopy copyRegion {
+        .imageSubresource = {
+            .aspectMask = aspectFromFormat(format),
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .imageExtent = { extent.width, extent.height, 1 }
+    };
+    cmd.copyBufferToImage(*src, *dst, vk::ImageLayout::eTransferDstOptimal, copyRegion);
+
+    cmd.end();
+
+    vk::SubmitInfo submitInfo;
+    submitInfo.setCommandBuffers(*cmd);
+
+    m_queue.submit(submitInfo);
     m_queue.waitIdle();
 }

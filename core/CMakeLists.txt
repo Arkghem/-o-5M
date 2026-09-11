@@ -33,6 +33,10 @@ target_link_libraries(o5m_core PUBLIC glm::glm)
 # 公共头 O5MMeshResource.h 不暴露 tinygltf 类型，所以 PRIVATE。
 target_link_libraries(o5m_core PRIVATE tinygltf)
 
+# stb — 只在 Src/O5MTextureResource.cpp（#include <stb_image.h>）中使用，
+# 公共头不暴露 stb 类型，所以 PRIVATE。
+target_link_libraries(o5m_core PRIVATE stb)
+
 # Vulkan — O5MTextureResource.h stores a vk::Image handle in a public header,
 # so the Vulkan loader is a PUBLIC dependency: any consumer of core/Inc must
 # also resolve <vulkan/vulkan.hpp> and link libvulkan.

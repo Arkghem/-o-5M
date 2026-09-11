@@ -47,7 +47,6 @@ public:
     vk::DeviceMemory getIndexBufferMemory(void) const { return *m_meshData->m_indexBufferMemory; }
     vk::DeviceSize getIndexBufferOffset(void) const { return m_meshData->m_indexBufferOffset; }
     uint32_t getIndexCount(void) const { return m_meshData->m_indexCount; }
-    vk::Device getDevice(void) const { return *m_device; };
 private:
     bool doLoad(void) override;
     void doUnload(void) override;

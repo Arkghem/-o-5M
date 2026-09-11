@@ -8,10 +8,11 @@
 
 #include "O5MResource.h"
 #include "O5MShaderResource.h"
+#include "O5MDevice.h"
 
 class O5MPipeline {
 public:
-    O5MPipeline(vk::raii::Device& device) : m_device(device) {}
+    O5MPipeline(O5MDevice& device) : m_device(device) {}
 
     void createPipeline(const std::vector<vk::Format>& colorFormats,
                         const O5MResourceHandle<O5MShaderResource>& vsSpirv,
@@ -24,7 +25,7 @@ public:
     void end(vk::raii::CommandBuffer& cmd);
 
 private:
-    vk::raii::Device& m_device;
+    O5MDevice& m_device;
     vk::raii::PipelineLayout m_pipelineLayout = nullptr;
     vk::raii::Pipeline m_pipeline = nullptr;
 };
