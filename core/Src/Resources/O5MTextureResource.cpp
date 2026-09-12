@@ -1,3 +1,5 @@
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+
 #include "Resources/O5MTextureResource.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -22,7 +24,10 @@ bool O5MTextureResource::doLoad(void) {
     m_channels = static_cast<uint32_t>(channels);
 
     vk::DeviceSize imageSize = m_width * m_height * 4;
-    uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(m_width, m_height))));
+    // P4 IBL 再做完整 mip 链生成（层数 = floor(log2(max(w,h))) + 1，注意 +1）。
+    // 现在只上传 mip0：分配了却不填充的 mip 会永远停在 UNDEFINED 布局，
+    // ImageView 一覆盖它们，采样时 validation 直接报 VUID-vkCmdDraw-None-09600。
+    uint32_t mipLevels = 1;
     
     auto [stagingBuffer, stagingMemory] = 
         m_device.createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -43,6 +48,21 @@ bool O5MTextureResource::doLoad(void) {
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     m_device.copyBufferToImage(stagingBuffer, m_data->m_image, vk::Format::eR8G8B8A8Srgb, {m_width, m_height});
+
+    vk::ImageViewCreateInfo imageViewInfo {
+        .image = *m_data->m_image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = vk::Format::eR8G8B8A8Srgb,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = mipLevels,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    m_data->m_imageView = vk::raii::ImageView(m_device.getDevice(), imageViewInfo);
 
     return true;
 }

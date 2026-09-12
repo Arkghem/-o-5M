@@ -14,7 +14,7 @@ private:
         //don't change order
         vk::raii::Image m_image = nullptr;
         vk::raii::DeviceMemory m_deviceMemory = nullptr;
-        // vk::raii::ImageView m_imageView = nullptr;
+        vk::raii::ImageView m_imageView = nullptr; //temproally we will simply create a default imageView, later this part will be moved into renderGraph
         // vk::raii::Sampler m_sampler = nullptr;
         vk::DeviceSize m_offset = 0;
     };
@@ -33,7 +33,7 @@ public:
     vk::Image getImage(void) const { return *m_data->m_image; }
     vk::DeviceMemory getDeviceMemory(void) const { return *m_data->m_deviceMemory; }
 
-    // vk::ImageView getImageView(void) const { return *m_data->m_imageView; }
+    vk::ImageView getImageView(void) const { return *m_data->m_imageView; }
     // vk::Sampler getSampler(void) const { return *m_data->m_sampler; }
 
     vk::DeviceSize getOffset(void) const { return m_data->m_offset; }

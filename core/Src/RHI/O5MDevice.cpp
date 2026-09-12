@@ -182,7 +182,9 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
     vk::ImageMemoryBarrier after{
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
         .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-        .oldLayout = vk::ImageLayout::eUndefined,
+        // oldLayout 必须是图像当前的真实布局（before-barrier 刚把它转进
+        // TRANSFER_DST_OPTIMAL）；写 UNDEFINED 等于声明"内容可以丢弃"
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
         .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         .image = dst,
         .subresourceRange = range,
@@ -192,7 +194,7 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
 
     cmd.begin(vk::CommandBufferBeginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-   });
+    });
 
     cmd.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,

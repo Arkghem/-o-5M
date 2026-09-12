@@ -88,9 +88,8 @@ target_link_libraries(rhi_verify PRIVATE o5m_core)
 # ---------------------------------------------------------------------------
 # Texture Verification Executable（Phase 0 验收：TextureResource 修复的靶场）
 # ---------------------------------------------------------------------------
-# 依赖 O5MTextureResource 修复后的 getImageView() 接口，修复完成前不编译。
-# add_executable(tex_verify apps/tex_verify.cpp)
-# target_link_libraries(tex_verify PRIVATE o5m_core)
+add_executable(tex_verify apps/tex_verify.cpp)
+target_link_libraries(tex_verify PRIVATE o5m_core)
 
 # ---------------------------------------------------------------------------
 # Unit Tests（ctest）
