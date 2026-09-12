@@ -100,7 +100,7 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
                 bufferTexCoordSet0 = reinterpret_cast<const float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
             }
 
-            // vertices
+            // position
             for (size_t v = 0; v < model.accessors[primitive.attributes.find("POSITION")->second].count; v++) {
                 Vertex vertex{};
                 vertex.m_pos = glm::make_vec3(&bufferPos[v * vertexStride]);
