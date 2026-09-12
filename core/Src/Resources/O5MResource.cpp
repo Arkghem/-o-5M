@@ -3,12 +3,9 @@
 
 #include <cassert>
 
-template <typename T>
-T* O5MResourceHandle<T>::get(void) const {
-    static_assert(std::is_base_of<O5MResource, T>::value, "T must be derived from O5MResource");
-
+O5MResource* __resource_resolve(uint32_t index, uint32_t generation) {
     auto& resourceManager = O5MResourceManager::getInstance();
     auto& slot = resourceManager.getResource(index);
 
-    return slot.generation == generation ? std::static_pointer_cast<T>(slot.resource).get() : nullptr;
+    return slot.generation == generation ? slot.resource.get() : nullptr;
 }

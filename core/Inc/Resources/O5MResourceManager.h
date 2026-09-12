@@ -25,12 +25,6 @@ private:
 
     std::vector<Slot> resources; //use stl vector is definitely a bug to fix, but no need to worry toomuch
     std::unordered_map<uint64_t, uint32_t> idToIndex;
-
-    // --Multithread part //no we got delete all of this 
-    std::unordered_map<uint64_t, std::filesystem::file_time_type> fileTimestamps;
-    std::thread watcherThread;
-    std::atomic<bool> running = false;
-
 public:
     static O5MResourceManager& getInstance(void) {
         static O5MResourceManager instance;

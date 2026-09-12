@@ -4,7 +4,6 @@
 
 #include <cassert>
 #include <stdexcept>
-
 //delete RenderGraph
 static vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
     switch (fmt) {

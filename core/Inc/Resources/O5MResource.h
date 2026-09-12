@@ -48,11 +48,15 @@ protected:
     virtual void doUnload(void) = 0;
 };
 
+O5MResource* __resource_resolve(uint32_t index, uint32_t generation);
+
 template <typename T>
 class O5MResourceHandle {
 private:
     const uint32_t index;
     uint32_t generation;
+    
+    O5MResource* resolove(void) const;
 public:
     O5MResourceHandle(void) = default;
     [[nodiscard]]O5MResourceHandle(uint32_t index, uint32_t generation) : 
@@ -61,9 +65,13 @@ public:
     T& operator*(void) const { return *get(); }
     operator bool(void) const { return isValid(); }
 public:
-    T* get() const;
+    T* get() const {
+        static_assert(std::is_base_of<O5MResource, T>::value, "T must be derived from O5MResource");
 
-    bool isValid(void) const { return index != 0; };
+        return static_cast<T*>(__resource_resolve(index, generation));
+    };
+
+    bool isValid(void) const { return index != 0xFFFF; };
 };
 
 #endif //!__O5MRESOURCE__H

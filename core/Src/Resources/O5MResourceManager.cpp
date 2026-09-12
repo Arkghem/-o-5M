@@ -34,12 +34,18 @@ O5MResourceHandle<T> O5MResourceManager::create(Args&&... args) {
                 .refCount = 1,
                 .nextFreeIndex = 0xFFFF,
                 });
+
+        idToIndex[resource->getResourceId()] = resources.size() - 1;
+
+        return O5MResourceHandle<T>(resources.size() - 1, 1);
     }
 
     Slot& candidateSlot = resources.at(freeHead);
     candidateSlot.generation++;
     candidateSlot.resource = resource;
     candidateSlot.refCount = 1;
+
+    idToIndex[resource->getResourceId()] = freeHead;
 
     O5MResourceHandle<T> res(freeHead, candidateSlot.generation);
 
@@ -67,5 +73,7 @@ void O5MResourceManager::release(const uint64_t resourceId) {
         slot.generation++;
         slot.nextFreeIndex = freeHead;
         freeHead = it->second;
+
+        idToIndex.erase(it);
     }
 }
