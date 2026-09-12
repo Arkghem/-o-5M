@@ -34,33 +34,8 @@ FetchContent_MakeAvailable(tinygltf)
 # OpenGL is provided by the system graphics driver.
 find_package(OpenGL REQUIRED)
 
-# Vulkan (Optional — Vulkan RHI backend, Phase 10+)
-# Enable with: cmake -DO5M_VULKAN=ON ..
-# Requires Vulkan SDK: https://vulkan.lunarg.com/
-option(O5M_VULKAN "Build with Vulkan RHI backend support" OFF)
-
-if(O5M_VULKAN)
-    find_package(Vulkan REQUIRED)
-    message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
-    add_compile_definitions(O5M_HAS_VULKAN)
-
-    find_package(shaderc QUIET)
-    if(NOT shaderc_FOUND)
-        # Fallback: Vulkan SDK ships shaderc_combined. Try to locate it.
-        find_library(SHADERC_LIBRARY NAMES shaderc_combined)
-        if(SHADERC_LIBRARY)
-            add_library(shaderc::shaderc_combined UNKNOWN IMPORTED)
-            set_target_properties(shaderc::shaderc_combined PROPERTIES
-                IMPORTED_LOCATION ${SHADERC_LIBRARY}
-                INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
-            message(STATUS "shaderc found (fallback): ${SHADERC_LIBRARY}")
-        else()
-            message(FATAL_ERROR "shaderc not found. Install Vulkan SDK: https://vulkan.lunarg.com/")
-        endif()
-    else()
-        message(STATUS "shaderc found via CMake config")
-    endif()
-endif()
+# Vulkan 与 shaderc 由 core/CMakeLists.txt 自行查找（本引擎单 Vulkan 后端，
+# 不存在"可选后端"开关；旧的 O5M_VULKAN option 是死代码，已删除）。
 
 # GLFW3 — window and input management. Install via vcpkg or system package.
 #   vcpkg: ./vcpkg install glfw3
@@ -88,9 +63,9 @@ endif()
 add_subdirectory(core)
 
 # ---------------------------------------------------------------------------
-# Main Executable
+# Legacy OpenGL Executable（Phase 2 实时渲染目标验收后退役删除）
 # ---------------------------------------------------------------------------
-add_executable(o5m main/main.cpp)
+add_executable(o5m apps/legacy_gl.cpp)
 
 # Link vendored glad (OpenGL loader) and system OpenGL.
 target_link_libraries(o5m PRIVATE glad OpenGL::GL)
@@ -103,12 +78,26 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# RHI Verification Executable
+# RHI Verification Executable（离屏回归测试，永久保留）
 # ---------------------------------------------------------------------------
-add_executable(rhi_verify main/rhi_verify.cpp)
+add_executable(rhi_verify apps/rhi_verify.cpp)
 
 # offscreen 验证程序：只依赖 o5m_core（Vulkan/glm 经 PUBLIC 传播），无窗口。
 target_link_libraries(rhi_verify PRIVATE o5m_core)
+
+# ---------------------------------------------------------------------------
+# Texture Verification Executable（Phase 0 验收：TextureResource 修复的靶场）
+# ---------------------------------------------------------------------------
+add_executable(tex_verify apps/tex_verify.cpp)
+target_link_libraries(tex_verify PRIVATE o5m_core)
+
+# ---------------------------------------------------------------------------
+# Unit Tests（ctest）
+# ---------------------------------------------------------------------------
+enable_testing()
+add_executable(resmgr_cycle_test test/resmgr_cycle_test.cpp)
+target_link_libraries(resmgr_cycle_test PRIVATE o5m_core)
+add_test(NAME resmgr_cycle COMMAND resmgr_cycle_test)
 
 # ---------------------------------------------------------------------------
 # Platform-Specific Settings

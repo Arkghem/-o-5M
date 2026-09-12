@@ -68,7 +68,12 @@ vcpkg_installed/
 Testing/
 .cache/
 
+# macOS
+.DS_Store
+
+# AI session learning artifacts (exercise docs, phase plans) — keep local only
+docs/
+
+chorma.log
 .zcode/
 .vectorcode/
-./AGENTS.md
-./PHASE-VULKAN.md
