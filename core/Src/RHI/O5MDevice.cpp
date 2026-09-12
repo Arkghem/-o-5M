@@ -31,7 +31,7 @@ O5MDevice::O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device d
 
     m_queue = vk::raii::Queue(m_device, queueFamilyIndex, 0);
 
-    // eTransient：告诉驱动这些命令缓冲短命、可整体复用，驱动可据此优化分配策略
+    // eTransient：short life-cycle but oftenly reused
     vk::CommandPoolCreateInfo poolInfo {
         .flags = vk::CommandPoolCreateFlagBits::eTransient,
         .queueFamilyIndex = queueFamilyIndex
@@ -160,11 +160,49 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
     vk::raii::CommandBuffers commandBuffers(m_device, allocInfo);
     vk::raii::CommandBuffer& cmd = commandBuffers.front();
 
+    vk::ImageSubresourceRange range {
+        .aspectMask = aspectFromFormat(format),
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+    };
+
+    vk::ImageMemoryBarrier before {
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .image = dst,
+        .subresourceRange = range,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
+    };
+
+    vk::ImageMemoryBarrier after{
+        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        .image = dst,
+        .subresourceRange = range,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
+    };
+
     cmd.begin(vk::CommandBufferBeginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-    });
+   });
 
-    // bufferRowLength/bufferImageHeight 缺省为 0 = 像素在 buffer 里紧密排列
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer,
+        {},
+        nullptr,
+        nullptr,
+        before
+    );
+
     vk::BufferImageCopy copyRegion {
         .imageSubresource = {
             .aspectMask = aspectFromFormat(format),
@@ -175,6 +213,15 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
         .imageExtent = { extent.width, extent.height, 1 }
     };
     cmd.copyBufferToImage(*src, *dst, vk::ImageLayout::eTransferDstOptimal, copyRegion);
+
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eAllCommands,
+        {},
+        nullptr,
+        nullptr,
+        after
+    );
 
     cmd.end();
 

@@ -23,7 +23,7 @@ public:
     {}
     virtual ~O5MResource() = default;
 public:
-    bool isloaded(void) const { return loaded; }//why don't just check if the data is nullptr?
+    bool isloaded(void) const { return loaded; }
     uint64_t getResourceId(void) const { return resourceId; }
     std::string getName(void) const { return name; }
     void setData(void* data, size_t byteSize) {
@@ -53,9 +53,9 @@ O5MResource* __resource_resolve(uint32_t index, uint32_t generation);
 template <typename T>
 class O5MResourceHandle {
 private:
-    const uint32_t index;
-    uint32_t generation;
-    
+    const uint32_t index = 0xFFFF;
+    uint32_t generation = 0;
+
     O5MResource* resolove(void) const;
 public:
     O5MResourceHandle(void) = default;

@@ -25,7 +25,7 @@ bool O5MTextureResource::doLoad(void) {
     uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(m_width, m_height))));
     
     auto [stagingBuffer, stagingMemory] = 
-        m_device.createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible);
+        m_device.createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* dataStaging = stagingMemory.mapMemory(0, imageSize);
     memcpy(dataStaging, pixels, imageSize);
@@ -39,11 +39,10 @@ bool O5MTextureResource::doLoad(void) {
             {m_width, m_height},
             mipLevels,
             vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     m_device.copyBufferToImage(stagingBuffer, m_data->m_image, vk::Format::eR8G8B8A8Srgb, {m_width, m_height});
-    stbi_image_free(pixels);
 
     return true;
 }

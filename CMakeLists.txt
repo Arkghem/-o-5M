@@ -93,6 +93,14 @@ target_link_libraries(rhi_verify PRIVATE o5m_core)
 # target_link_libraries(tex_verify PRIVATE o5m_core)
 
 # ---------------------------------------------------------------------------
+# Unit Tests（ctest）
+# ---------------------------------------------------------------------------
+enable_testing()
+add_executable(resmgr_cycle_test test/resmgr_cycle_test.cpp)
+target_link_libraries(resmgr_cycle_test PRIVATE o5m_core)
+add_test(NAME resmgr_cycle COMMAND resmgr_cycle_test)
+
+# ---------------------------------------------------------------------------
 # Platform-Specific Settings
 # ---------------------------------------------------------------------------
 if(APPLE)
