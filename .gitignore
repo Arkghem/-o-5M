@@ -72,7 +72,7 @@ Testing/
 .DS_Store
 
 # AI session learning artifacts (exercise docs, phase plans) — keep local only
-.AGENTS.md
+AGENTS.md
 docs/
 
 chorma.log
