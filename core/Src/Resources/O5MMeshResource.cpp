@@ -58,6 +58,7 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
     for (const auto& mesh : model.meshes) {
         for (const auto& primitive : mesh.primitives) {
             const float* bufferPos = nullptr;
+            const float* bufferNorm = nullptr;
             const uint32_t* bufferIndices = nullptr;
             const float* bufferTexCoordSet0 = nullptr;
 
@@ -71,7 +72,15 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
                 bufferPos = reinterpret_cast<float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
                 vertexStride = accessor.ByteStride(view) ? accessor.ByteStride(view) / sizeof(float) : 3;
             }
-       
+
+            //normal
+            if (primitive.attributes.find("NORMAL") != primitive.attributes.end()) {
+                const tinygltf::Accessor& accessor = model.accessors[primitive.attributes.find("NORMAL")->second];
+                const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+                bufferNorm = reinterpret_cast<float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                vertexStride = accessor.ByteStride(view) ? accessor.ByteStride(view) / sizeof(float) : 3;
+            }
+            
             // index
             if (primitive.indices >= 0) {
                 const tinygltf::Accessor& accessor = model.accessors[primitive.indices];
@@ -100,7 +109,7 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
                 bufferTexCoordSet0 = reinterpret_cast<const float*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
             }
 
-            // position
+            // vertex
             for (size_t v = 0; v < model.accessors[primitive.attributes.find("POSITION")->second].count; v++) {
                 Vertex vertex{};
                 vertex.m_pos = glm::make_vec3(&bufferPos[v * vertexStride]);
