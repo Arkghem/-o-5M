@@ -15,7 +15,7 @@ private:
     struct Vertex {
         glm::vec3 m_pos;
         glm::vec3 m_color;
-        glm::vec3 m_norm;
+        glm::vec4 m_norm;
         glm::vec3 m_tangent;
         glm::vec2 m_texCoord;
     };
@@ -23,12 +23,12 @@ private:
     struct MeshData{
         vk::raii::Buffer m_vertexBuffer = nullptr;
         vk::raii::DeviceMemory m_vertexBufferMemory = nullptr;
-        vk::DeviceSize m_vertexBufferOffset = 0;
+        vk::DeviceSize m_vertexBufferOffset = sizeof(Vertex);
         uint32_t m_vertexCount = 0;
 
         vk::raii::Buffer m_indexBuffer = nullptr;
         vk::raii::DeviceMemory m_indexBufferMemory = nullptr;
-        vk::DeviceSize m_indexBufferOffset = 0;
+        vk::DeviceSize m_indexBufferOffset = sizeof(uint32_t);
         uint32_t m_indexCount = 0;
     };
 
