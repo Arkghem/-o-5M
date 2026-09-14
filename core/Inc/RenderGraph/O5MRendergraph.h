@@ -3,11 +3,13 @@
 
 #include <string>
 #include <vector>
+
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "RHI/O5MDevice.h"
 
+/*
 class O5MRendergraph {
 public:
     enum class ResourceKind { Image, Buffer };
@@ -93,6 +95,9 @@ public:
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
                  vk::raii::Fence* fence = nullptr);
 };
+*/
+
+//TODO Phase1 start reconstruct the whole rendergraph.
 
 #endif //__O5MRENDERGRAPH__H
 
