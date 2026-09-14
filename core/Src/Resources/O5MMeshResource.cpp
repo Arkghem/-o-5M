@@ -1,5 +1,7 @@
 #include "Resources/O5MMeshResource.h"
 
+#include <iostream>
+
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -149,6 +151,8 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
     vertices.clear();
     indices.clear();
 
+    int accumulationVertexCount = 0;
+
     for (const auto& mesh : model.meshes) {
         for (const auto& primitive : mesh.primitives) {
             std::vector<float> positions;
@@ -188,26 +192,32 @@ bool O5MMeshResource::loadMeshData(std::vector<Vertex>& vertices, std::vector<ui
             if (primitive.indices >= 0) {
                 const tinygltf::Accessor& accessor = model.accessors[primitive.indices];
                 const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
-                const uint32_t* bufferIndices = reinterpret_cast<const uint32_t*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
 
-                int indicesByteStride = 0;
-                indices.resize(accessor.count);
                 switch (accessor.componentType) {
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-                        indicesByteStride = sizeof(uint32_t);
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+                        auto bufferIndices = reinterpret_cast<const uint32_t*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                        for (size_t i = 0; i < accessor.count; ++i)
+                            indices.push_back(bufferIndices[i] + accumulationVertexCount);
                         break;
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-                        throw std::runtime_error("this  component type is not supported.");
+                    }
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+                        auto bufferIndices = reinterpret_cast<const uint16_t*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                        for (size_t i = 0; i < accessor.count; ++i)
+                            indices.push_back(bufferIndices[i] + accumulationVertexCount);
                         break;
-                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-                        throw std::runtime_error("this  component type is not supported.");
+                    }
+                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+                        auto bufferIndices = reinterpret_cast<const uint8_t*>(&(model.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                        for (size_t i = 0; i < accessor.count; ++i)
+                            indices.push_back(bufferIndices[i] + accumulationVertexCount);
                         break;
+                    }
                     default:
                         break;
                 }
-
-                memcpy(indices.data(), bufferIndices, model.accessors[primitive.indices].count * indicesByteStride);
             }
+
+            accumulationVertexCount = static_cast<int>(vertices.size());
         }
     }
     return true; 
@@ -224,7 +234,8 @@ void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
     stagingMemory.unmapMemory();
 
     std::tie(m_meshData->m_vertexBuffer, m_meshData->m_vertexBufferMemory) = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        // eTransferSrc：debug 回读（mesh_verify 把顶点/索引拷回 Host 比对）需要
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     m_device.copyBuffer(stagingBuffer, m_meshData->m_vertexBuffer, bufferSize);
 }
@@ -240,7 +251,7 @@ void O5MMeshResource::createIndexBuffer(std::vector<uint32_t>& indices) {
     stagingMemory.unmapMemory();
 
     std::tie(m_meshData->m_indexBuffer, m_meshData->m_indexBufferMemory) = 
-        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer |  vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     m_device.copyBuffer(stagingBuffer, m_meshData->m_indexBuffer, bufferSize);
 }

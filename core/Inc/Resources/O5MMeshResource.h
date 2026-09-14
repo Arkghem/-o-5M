@@ -11,7 +11,7 @@
 #include "RHI/O5MDevice.h"
 
 class O5MMeshResource : public O5MResource {
-private:
+public:
     struct Vertex {
         glm::vec3 m_pos;
         glm::vec3 m_color;
@@ -20,15 +20,17 @@ private:
         glm::vec2 m_texCoord;
     };
 
+private:
+
     struct MeshData{
         vk::raii::Buffer m_vertexBuffer = nullptr;
         vk::raii::DeviceMemory m_vertexBufferMemory = nullptr;
-        vk::DeviceSize m_vertexBufferOffset = sizeof(Vertex);
+        vk::DeviceSize m_vertexBufferOffset = 0;
         uint32_t m_vertexCount = 0;
 
         vk::raii::Buffer m_indexBuffer = nullptr;
         vk::raii::DeviceMemory m_indexBufferMemory = nullptr;
-        vk::DeviceSize m_indexBufferOffset = sizeof(uint32_t);
+        vk::DeviceSize m_indexBufferOffset = 0;
         uint32_t m_indexCount = 0;
     };
 

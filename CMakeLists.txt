@@ -92,6 +92,12 @@ add_executable(tex_verify apps/tex_verify.cpp)
 target_link_libraries(tex_verify PRIVATE o5m_core)
 
 # ---------------------------------------------------------------------------
+# Mesh Verification Executable（Phase 0 练习 3 验收：手工 GLB，uint16 索引）
+# ---------------------------------------------------------------------------
+add_executable(mesh_verify apps/mesh_verify.cpp)
+target_link_libraries(mesh_verify PRIVATE o5m_core)
+
+# ---------------------------------------------------------------------------
 # Unit Tests（ctest）
 # ---------------------------------------------------------------------------
 enable_testing()
