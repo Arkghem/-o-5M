@@ -3,11 +3,15 @@
 
 #include <string>
 #include <vector>
+#include <concepts>
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "RHI/O5MDevice.h"
+#include "RenderGraph/O5MRendergraphType.h"
+#include "RenderGraph/O5MPassBuilder.h"
+#include "RenderGraph/O5MRenderContext.h"
 
 /*
 class O5MRendergraph {
@@ -97,22 +101,46 @@ public:
 };
 */
 
+using namespace O5MRendergraphNS;
+
 //TODO Phase1 start reconstruct the whole rendergraph.
 class O5MRendergraph {
+    std::vector<PassDesc> m_passDescs;
 public:
-    template<typename F1, typename F2>
-    void addGraphicPass(std::string debugName, F1 PassBuilder, F2 Ctx) {
+    template <typename SetupFn, typename ExecuteFn>
+        requires std::invocable<SetupFn, O5MPassBuilder&> &&
+                 std::invocable<ExecuteFn, O5MRenderContext&, vk::raii::CommandBuffer&> 
+    void addGraphicPass(const std::string& debugName, SetupFn setup, ExecuteFn execute) {
+        PassDesc passDesc {
+            .debugName = debugName,
+            .kind = PassKind::Graphic,
+            .executeFunc = execute
+        };
 
+        O5MPassBuilder builder(passDesc);
+        setup(builder);
+
+        m_passDescs.push_back(passDesc);
     }
 
-    template<typename F1, typename F2>
-    void addComputePass(std::string debugName, F1 PassBuilder, F2 Ctx) {
+    template <typename SetupFn, typename ExecuteFn>
+        requires std::invocable<SetupFn, O5MPassBuilder&> &&
+                 std::invocable<ExecuteFn, O5MRenderContext&, vk::raii::CommandBuffer&> 
+    void addComputePass(std::string debugName, SetupFn setup, ExecuteFn execute) {
+        PassDesc passDesc {
+            .debugName = debugName,
+            .kind = PassKind::Compute,
+            .executeFunc = execute
+        };
 
+        O5MPassBuilder builder(passDesc);
+        setup(builder);
+
+        m_passDescs.push_back(passDesc);
     }
 
-    void compile(void);
-
-    void execute(void);
+    void compile(void); //output PassBuilder
+    void execute(void); //output RenderContext
 };
 
 #endif //__O5MRENDERGRAPH__H

@@ -2,13 +2,15 @@
 
 #include "RenderGraph/O5MRendergraph.h"
 
+#include <unordered_map>
+
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_format_traits.hpp>
 
 //SHIT it really sucks, I think the whole rendergraph part might need to be reconstruct
 //But anyway, let's make it just works
 
-vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
+/*vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
     switch (fmt) {
         case vk::Format::eD32Sfloat://high persion depth, revered-z
         case vk::Format::eD16Unorm: //low percision depth, used in moblie platform
@@ -422,3 +424,38 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
     //TODO Fence wait modification for cpu side
     queue.submit(submitInfo, fence ? **fence : vk::Fence{ nullptr });
 }
+*/
+
+enum class EdgeKind { RAW, WAR, /*WAW*/ }; 
+//due to the single-writer restriction, WAW is unavailable for now
+
+struct Edge {
+    const PassDesc& from;
+    const PassDesc& To;
+
+    EdgeKind kind;
+};
+
+void O5MRendergraph::compile(void) {
+
+    //Resource writer detect
+    std::unordered_map<uint32_t, const PassDesc&> resourceWriters;
+    for (const auto& pass : m_passDescs) {
+        for (auto write : pass.writes) {
+            resourceWriters[write.handle];
+        }
+    }
+
+    //Pass dependencies grpah
+    std::vector<Edge> edges;
+    for (const auto& pass : m_passDescs) {
+        for (const auto& input : pass.reads) {
+            auto writer = resourceWriters.find(input.handle);
+            if (writer != resourceWriters.end()) {
+                edges.push_back({ writer->second, pass, EdgeKind::RAW });
+            }
+        }
+    }
+
+}
+
