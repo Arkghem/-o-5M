@@ -13,6 +13,7 @@ private:
     vk::ShaderStageFlagBits m_stage;
 
     const O5MDevice& m_device;
+
 public:
     O5MShaderResource(void) = delete;
     [[nodiscard]] O5MShaderResource(const std::string& name, vk::ShaderStageFlagBits stage, const O5MDevice& device):
@@ -20,9 +21,11 @@ public:
         m_stage(stage),
         m_device(device){}
     ~O5MShaderResource() override { unload(); };
+
 public:
     vk::ShaderModule getShaderModule(void) const { return m_shaderModule; }
     vk::ShaderStageFlags getStage(void) const { return m_stage; }
+
 private:
     bool doLoad(void) override; //create vulkan resource
     void doUnload(void) override;

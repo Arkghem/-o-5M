@@ -22,13 +22,18 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
     uint32_t m_channels = 0;
+
     O5MDevice& m_device;
+
     std::unique_ptr<TextureData> m_data;
+
 public:
     O5MTextureResource(const std::string& name, O5MDevice& device) : 
         O5MResource(name), m_device(device)
     {};
+
     ~O5MTextureResource() override { unload(); };
+
 public:
     vk::Image getImage(void) const { return *m_data->m_image; }
     vk::DeviceMemory getDeviceMemory(void) const { return *m_data->m_deviceMemory; }
@@ -40,6 +45,7 @@ public:
 
     int getWidth(void) const { return m_width; }
     int getHeight(void) const { return m_height; }
+
 private:
     bool doLoad(void) override;
     void doUnload(void) override;

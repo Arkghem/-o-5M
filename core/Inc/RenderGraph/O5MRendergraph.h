@@ -98,6 +98,22 @@ public:
 */
 
 //TODO Phase1 start reconstruct the whole rendergraph.
+class O5MRendergraph {
+public:
+    template<typename F1, typename F2>
+    void addGraphicPass(std::string debugName, F1 PassBuilder, F2 Ctx) {
+
+    }
+
+    template<typename F1, typename F2>
+    void addComputePass(std::string debugName, F1 PassBuilder, F2 Ctx) {
+
+    }
+
+    void compile(void);
+
+    void execute(void);
+};
 
 #endif //__O5MRENDERGRAPH__H
 

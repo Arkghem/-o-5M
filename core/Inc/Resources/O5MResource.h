@@ -16,12 +16,15 @@ private:
     size_t size;
 
     bool loaded = false;
+
 public:
     explicit O5MResource(const std::string& name):
         name(name), 
         resourceId(nextId.fetch_add(1, std::memory_order_relaxed))
     {}
+
     virtual ~O5MResource() = default;
+
 public:
     bool isloaded(void) const { return loaded; }
     uint64_t getResourceId(void) const { return resourceId; }
@@ -43,6 +46,7 @@ public:
         doUnload();
         loaded = false;
     };
+
 protected:
     virtual bool doLoad(void) = 0;
     virtual void doUnload(void) = 0;
@@ -57,13 +61,16 @@ private:
     uint32_t generation = 0;
 
     O5MResource* resolove(void) const;
+
 public:
     O5MResourceHandle(void) = default;
     [[nodiscard]]O5MResourceHandle(uint32_t index, uint32_t generation) : 
         index(index), generation(generation) {}
+
     T* operator->(void) const { return get(); }
     T& operator*(void) const { return *get(); }
     operator bool(void) const { return isValid(); }
+
 public:
     T* get() const {
         static_assert(std::is_base_of<O5MResource, T>::value, "T must be derived from O5MResource");
