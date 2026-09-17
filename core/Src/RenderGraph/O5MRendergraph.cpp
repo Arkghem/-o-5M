@@ -3,6 +3,7 @@
 #include "RenderGraph/O5MRendergraph.h"
 
 #include <unordered_map>
+#include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_format_traits.hpp>
@@ -430,32 +431,48 @@ enum class EdgeKind { RAW, WAR, /*WAW*/ };
 //due to the single-writer restriction, WAW is unavailable for now
 
 struct Edge {
-    const PassDesc& from;
-    const PassDesc& To;
+    uint32_t from; //index into m_passDescs
+    uint32_t to;   //index into m_passDescs
 
     EdgeKind kind;
 };
 
 void O5MRendergraph::compile(void) {
+    std::unordered_map<uint32_t, uint32_t> resourceWriters;              //resource handle -> writer pass index
+    std::unordered_map<uint32_t, std::vector<uint32_t>> resourceReaders; //resource handle -> reader pass indices
 
     //Resource writer detect
-    std::unordered_map<uint32_t, const PassDesc&> resourceWriters;
-    for (const auto& pass : m_passDescs) {
-        for (auto write : pass.writes) {
-            resourceWriters[write.handle];
+    for (uint32_t passIdx = 0; passIdx < m_passDescs.size(); ++passIdx) {
+        const auto& pass = m_passDescs[passIdx];
+        for (const auto& write : pass.writes) {
+            resourceWriters[write.handle] = passIdx;
+        }
+        for (const auto& read : pass.reads) {
+            resourceReaders[read.handle].push_back(passIdx);
         }
     }
 
     //Pass dependencies grpah
     std::vector<Edge> edges;
-    for (const auto& pass : m_passDescs) {
+    for (uint32_t passIdx = 0; passIdx < m_passDescs.size(); ++passIdx) {
+        const auto& pass = m_passDescs[passIdx];
         for (const auto& input : pass.reads) {
             auto writer = resourceWriters.find(input.handle);
             if (writer != resourceWriters.end()) {
-                edges.push_back({ writer->second, pass, EdgeKind::RAW });
+                edges.push_back({ writer->second, passIdx, EdgeKind::WAR});
+            }
+        }
+        for (const auto& output : pass.writes) {
+            auto readers = resourceReaders.find(output.handle);
+            if(readers != resourceReaders.end()){
+                for (auto readerIdx : readers->second) {
+                    if(readerIdx != passIdx){
+                        edges.push_back({passIdx, readerIdx, EdgeKind::RAW});
+                    }
+                }
             }
         }
     }
-
+    
 }
 
