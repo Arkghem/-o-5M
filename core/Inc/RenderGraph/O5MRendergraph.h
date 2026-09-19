@@ -105,8 +105,25 @@ using namespace O5MRendergraphNS;
 
 //TODO Phase1 start reconstruct the whole rendergraph.
 class O5MRendergraph {
+private:
+    std::unordered_map<uint32_t, ResourceHandle> m_resourceInfos;
+
     std::vector<PassDesc> m_passDescs;
+    std::vector<uint32_t> m_executionOrder;
+
+    O5MDevice& m_device;
 public:
+    O5MRendergraph(O5MDevice& device) : m_device(device) {};
+
+    void addResourceInfo(ResourceHandle& info) {
+        auto it = m_resourceInfos.find(info.handle);
+        if (it != m_resourceInfos.end()) {
+            return;
+        }
+
+        m_resourceInfos[info.handle] = info;
+    } 
+
     template <typename SetupFn, typename ExecuteFn>
         requires std::invocable<SetupFn, O5MPassBuilder&> &&
                  std::invocable<ExecuteFn, O5MRenderContext&, vk::raii::CommandBuffer&> 
@@ -117,7 +134,7 @@ public:
             .executeFunc = execute
         };
 
-        O5MPassBuilder builder(passDesc);
+        O5MPassBuilder builder(this, passDesc);
         setup(builder);
 
         m_passDescs.push_back(passDesc);
@@ -133,14 +150,15 @@ public:
             .executeFunc = execute
         };
 
-        O5MPassBuilder builder(passDesc);
+        O5MPassBuilder builder(this, passDesc);
         setup(builder);
 
         m_passDescs.push_back(passDesc);
     }
 
-    void compile(void); //output PassBuilder
-    void execute(void); //output RenderContext
+    void compile(void);
+    void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
+                 vk::raii::Fence* fence = nullptr); 
 };
 
 #endif //__O5MRENDERGRAPH__H

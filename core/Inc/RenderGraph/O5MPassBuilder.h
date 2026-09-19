@@ -12,15 +12,30 @@ class O5MRendergraph;
 
 class O5MPassBuilder {
 private:
+    O5MRendergraph* m_graph;
     PassDesc& m_passDesc;   
 public:
     O5MPassBuilder(void) = delete;
-    O5MPassBuilder(PassDesc& passDesc) : m_passDesc(passDesc) {}
+    O5MPassBuilder(O5MRendergraph* graph, PassDesc& passDesc) : 
+        m_graph(graph),
+        m_passDesc(passDesc) {}
     ~O5MPassBuilder(void);
 
-    void read(UseDecl useDecl) { m_passDesc.reads.push_back(useDecl); }
-    void write(UseDecl useDecl) { m_passDesc.writes.push_back(useDecl); }
-    void readWrites(UseDecl useDecl) { m_passDesc.readWrites.push_back(useDecl); }
+    //shit code here, alil' fuction push this info into rendergraph
+    void addResource(ResourceHandle&);
+
+    void read(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.reads.emplace_back(handle, use); 
+        addResource(handle);
+    }
+    void write(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.writes.emplace_back(handle, use); 
+        addResource(handle);
+    }
+    void readwrite(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.readWrites.emplace_back(handle, use);
+        addResource(handle);
+    }
 };
 
 #endif // O5MPASSBUILDER_H

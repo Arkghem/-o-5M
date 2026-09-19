@@ -430,11 +430,13 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
 enum class EdgeKind { RAW, WAR, /*WAW*/ }; 
 //due to the single-writer restriction, WAW is unavailable for now
 
-struct Edge {
-    uint32_t from; //index into m_passDescs
-    uint32_t to;   //index into m_passDescs
+struct Node {
+    uint32_t index; //index into m_passDescs
+    std::vector<uint32_t> RAW;   
+    std::vector<uint32_t> WAR;
+    std::vector<uint32_t> WAW;
 
-    EdgeKind kind;
+    int inDegree = 0;
 };
 
 void O5MRendergraph::compile(void) {
@@ -453,13 +455,14 @@ void O5MRendergraph::compile(void) {
     }
 
     //Pass dependencies grpah
-    std::vector<Edge> edges;
+    std::unordered_map<uint32_t, Node> nodes;
     for (uint32_t passIdx = 0; passIdx < m_passDescs.size(); ++passIdx) {
         const auto& pass = m_passDescs[passIdx];
+        Node node;
         for (const auto& input : pass.reads) {
             auto writer = resourceWriters.find(input.handle);
             if (writer != resourceWriters.end()) {
-                edges.push_back({ writer->second, passIdx, EdgeKind::WAR});
+                node.RAW.push_back(writer->second);
             }
         }
         for (const auto& output : pass.writes) {
@@ -467,12 +470,135 @@ void O5MRendergraph::compile(void) {
             if(readers != resourceReaders.end()){
                 for (auto readerIdx : readers->second) {
                     if(readerIdx != passIdx){
-                        edges.push_back({passIdx, readerIdx, EdgeKind::RAW});
+                        node.WAR.push_back(readerIdx);
                     }
                 }
             }
         }
+        nodes[passIdx] = node;
     }
-    
+
+    //cycle detect
+    std::queue<uint32_t> queue;
+    std::vector<bool> visited(m_passDescs.size(), false);
+    queue.push(0);
+    while (!queue.empty()) {
+        auto idx = queue.front();
+        queue.pop();
+        visited[idx] = true;
+
+        for (auto dep : nodes[idx].RAW) {
+            if (!visited[dep]) 
+                queue.push(dep);
+            else
+                throw std::runtime_error("Cycle detected in render graph");
+        }
+        for (auto dep : nodes[idx].WAR) {
+            if (!visited[dep]) 
+                queue.push(dep);
+            else
+                throw std::runtime_error("Cycle detected in render graph");
+        }
+        for (auto dep : nodes[idx].WAW) {
+            if (!visited[dep]) 
+                queue.push(dep);
+            else
+                throw std::runtime_error("Cycle detected in render graph");
+        }
+    }
+
+    //Kahn sort
+    m_executionOrder.clear();
+
+    //count the inDegree
+    for (auto& [idx, node] : nodes) {
+        for (auto dep : node.RAW) {
+            node.inDegree++;
+        }
+        for (auto dep : node.WAR) {
+            node.inDegree++;
+        }
+    }
+
+    //Todo: This is a simple topological sort, we need to handle cycles
+    std::queue<uint32_t> readyQueue;
+    for (auto& [idx, node] : nodes) {
+        if (node.inDegree == 0) {
+            readyQueue.push(idx);
+        }
+    }
+
+    while (!readyQueue.empty()) {
+        uint32_t idx = readyQueue.front();
+        readyQueue.pop();
+        m_executionOrder.push_back(idx);
+
+        for (auto dep : nodes[idx].RAW) {
+            nodes[dep].inDegree--;
+            if (nodes[dep].inDegree == 0) {
+                readyQueue.push(dep);
+            }
+        }
+        for (auto dep : nodes[idx].WAR) {
+            nodes[dep].inDegree--;
+            if (nodes[dep].inDegree == 0) {
+                readyQueue.push(dep);
+            }
+        }
+    }
+
+    //resource lifecycle management& usage convertationk
+    for (size_t i = 0; i < m_executionOrder.size(); i++) {
+        auto& pass = m_passDescs[m_executionOrder[i]];
+        for (auto read : pass.reads) {
+            //firstUse/lastUse
+            auto& info = m_resourceInfos[read.handle];
+            if (info.firstUse == UINT32_MAX)
+                info.firstUse = m_executionOrder[i];
+            info.lastUse = m_executionOrder[i];
+
+            ResourceKind k = declareKind(read.use);
+            switch (k) {
+                case ResourceKind::Buffer: 
+                    std::get<BufferInfo>(info.info).usage |= toBufferUsage(read.use);
+                    break;
+                case ResourceKind::Image:
+                    std::get<ImageInfo>(info.info).usage |= toImageUsage(read.use);
+                    break;
+            }
+        }
+
+        for (auto write: pass.writes) {
+            //firstUse/lastUse
+            auto& info = m_resourceInfos[write.handle];
+            if (info.firstUse == UINT32_MAX)
+                info.firstUse = m_executionOrder[i];
+            info.lastUse = m_executionOrder[i];
+
+            ResourceKind k = declareKind(write.use);
+            switch (k) {
+                case ResourceKind::Buffer: 
+                    std::get<BufferInfo>(info.info).usage |= toBufferUsage(write.use);
+                    break;
+                case ResourceKind::Image:
+                    std::get<ImageInfo>(info.info).usage |= toImageUsage(write.use);
+                    break;
+            }
+        }
+
+        //if it is read&wirte, it must be a imageBuffer
+        for (auto readWrite : pass.readWrites) {
+            auto& info = m_resourceInfos[readWrite.handle];
+            if (info.firstUse == UINT32_MAX)
+                info.firstUse = m_executionOrder[i];
+            info.lastUse = m_executionOrder[i];
+
+            std::get<ImageInfo>(info.info).usage |= toImageUsage(readWrite.use);
+        }
+    }
+}
+
+void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer,  vk::Queue queue, vk::raii::Fence* fence) {
+
 }
 
