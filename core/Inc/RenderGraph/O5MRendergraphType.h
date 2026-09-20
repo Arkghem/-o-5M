@@ -28,6 +28,14 @@ namespace O5MRendergraphNS {
     using TexHandle = std::uint32_t;
     using BufHandle = std::uint32_t;
 
+    struct PhysicalResource {
+        ResourceKind kind;
+        vk::raii::DeviceMemory memory = nullptr;
+        vk::raii::Image image = nullptr;
+        vk::raii::ImageView view = nullptr;
+        vk::raii::Buffer buffer = nullptr;
+    };
+
     //Minimal handle auto-allocation: name interning.
     inline uint32_t internResourceName(const std::string& name) {
         static std::unordered_map<std::string, uint32_t> table; //name -> handle
@@ -60,17 +68,21 @@ namespace O5MRendergraphNS {
         std::variant<ImageInfo, BufferInfo> info;
 
         ResourceHandle(
+            std::string& debugName,
             vk::Extent2D extent,
             vk::Format format
         )
-            : handle(internResourceName(debugName)),
+            :debugName(debugName),
+            handle(internResourceName(debugName)),
             kind(ResourceKind::Image), 
             info(ImageInfo{ extent, format, {},}) {}
 
         ResourceHandle(
+            std::string& debugName,
             vk::DeviceSize size
         )
-            : handle(internResourceName(debugName)), 
+            : debugName(debugName),
+            handle(internResourceName(debugName)), 
             kind(ResourceKind::Buffer), 
             info(BufferInfo{size, {},}) {}
     };

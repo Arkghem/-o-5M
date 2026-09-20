@@ -106,7 +106,8 @@ using namespace O5MRendergraphNS;
 //TODO Phase1 start reconstruct the whole rendergraph.
 class O5MRendergraph {
 private:
-    std::unordered_map<uint32_t, ResourceHandle> m_resourceInfos;
+    std::unordered_map<uint32_t, ResourceHandle> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
+    std::unordered_map<uint32_t, PhysicalResource> m_physicalResources; //the place we put the physcial resource in
 
     std::vector<PassDesc> m_passDescs;
     std::vector<uint32_t> m_executionOrder;

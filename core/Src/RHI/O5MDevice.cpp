@@ -119,6 +119,31 @@ O5MDevice::createImage2D(vk::Format format, vk::Extent2D extent,
     return { std::move(image), std::move(memory) };
 }
 
+vk::raii::ImageView O5MDevice::createImageView2D(
+    const vk::raii::Image& image,
+    vk::Format format,
+    vk::ImageAspectFlags aspectFlags
+) {
+    if (aspectFlags & vk::ImageAspectFlagBits::eNone) {
+          aspectFlags = aspectFromFormat(format);
+    }
+
+    vk::ImageViewCreateInfo viewInfo {
+        .image = image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .subresourceRange = {
+            .aspectMask = aspectFlags,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    return vk::raii::ImageView(m_device, viewInfo);
+}
+
 void O5MDevice::copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& dst,
                            vk::DeviceSize size) {
     vk::CommandBufferAllocateInfo allocInfo {

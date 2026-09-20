@@ -35,6 +35,11 @@ public:
                       uint32_t mipLevels, vk::ImageTiling tilling,
                       vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 
+    vk::raii::ImageView createImageView2D(
+        const vk::raii::Image& image,
+        vk::Format format,
+        vk::ImageAspectFlags aspect = {}); 
+
     void copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& dst,
                     vk::DeviceSize size);
 

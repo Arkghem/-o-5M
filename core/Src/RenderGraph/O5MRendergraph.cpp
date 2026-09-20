@@ -596,9 +596,33 @@ void O5MRendergraph::compile(void) {
             std::get<ImageInfo>(info.info).usage |= toImageUsage(readWrite.use);
         }
     }
+    
+    //initalize physical resources
+    for (auto [handle, resourceInfo] : m_resourceInfos) {
+        ResourceKind kind = resourceInfo.kind;
+        PhysicalResource physicalResource;
+        switch (kind) {
+            case ResourceKind::Buffer: 
+                std::tie(physicalResource.buffer, physicalResource.memory) =
+                    m_device.createBuffer(std::get<BufferInfo>(resourceInfo.info).size,
+                        std::get<BufferInfo>(resourceInfo.info).usage,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+                break;
+            case ResourceKind::Image:
+                std::tie(physicalResource.image, physicalResource.memory) =
+                    m_device.createImage2D(std::get<ImageInfo>(resourceInfo.info).format,
+                        std::get<ImageInfo>(resourceInfo.info).extent, 1,
+                        vk::ImageTiling::eOptimal, std::get<ImageInfo>(resourceInfo.info).usage,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+                //createImageView
+                physicalResource.view = m_device.createImageView2D(physicalResource.image,
+                        std::get<ImageInfo>(resourceInfo.info).format);
+                break;
+        }
+    }
 }
-
 void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer,  vk::Queue queue, vk::raii::Fence* fence) {
-
+    
 }
 
