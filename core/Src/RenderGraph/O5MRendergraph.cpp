@@ -620,9 +620,28 @@ void O5MRendergraph::compile(void) {
                         std::get<ImageInfo>(resourceInfo.info).format);
                 break;
         }
+
+        //barrier configuration
     }
 }
-void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer,  vk::Queue queue, vk::raii::Fence* fence) {
-    
+void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue, vk::raii::Fence* fence) {
+    std::vector<vk::raii::CommandBuffer> commandBuffers;
+    commandBuffer.begin({});
+    /* this part will be moved into "compile".
+    for (auto passIdx : m_executionOrder) {
+        auto& pass = m_passDescs[passIdx]; // why I can't just simply copy the desc
+        for (auto input : pass.reads) {
+            auto& resourceInfo = m_resourceInfos.at(input.handle);
+            auto& physicalResource = m_physicalResources.at(input.handle);
+
+            switch (resourceInfo.kind) {
+                case ResourceKind::Buffer:
+                    vk::BufferMemoryBarrier barrier{
+                        
+                    };
+            }
+        }
+    }
+    */
 }
 
