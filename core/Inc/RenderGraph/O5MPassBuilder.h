@@ -22,19 +22,19 @@ public:
     ~O5MPassBuilder(void);
 
     //shit code here, alil' fuction push this info into rendergraph
-    void addResource(ResourceHandle&);
+    void addResource(ResourceInfo&);
 
-    void read(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
-        m_passDesc.reads.emplace_back(handle, use); 
-        addResource(handle);
+    void read(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.reads.emplace_back(info, use); 
+        addResource(info);
     }
-    void write(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
-        m_passDesc.writes.emplace_back(handle, use); 
-        addResource(handle);
+    void write(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.writes.emplace_back(info, use); 
+        addResource(info);
     }
-    void readwrite(ResourceHandle& handle, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
-        m_passDesc.readWrites.emplace_back(handle, use);
-        addResource(handle);
+    void readwrite(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+        m_passDesc.readWrites.emplace_back(info, use);
+        addResource(info);
     }
 };
 

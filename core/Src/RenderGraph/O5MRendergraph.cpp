@@ -520,7 +520,6 @@ void O5MRendergraph::compile(void) {
         }
     }
 
-    //Todo: This is a simple topological sort, we need to handle cycles
     std::queue<uint32_t> readyQueue;
     for (auto& [idx, node] : nodes) {
         if (node.inDegree == 0) {
@@ -552,7 +551,7 @@ void O5MRendergraph::compile(void) {
         auto& pass = m_passDescs[m_executionOrder[i]];
         for (auto read : pass.reads) {
             //firstUse/lastUse
-            auto& info = m_resourceInfos[read.handle];
+            auto& info = m_resourceInfos.at(read.handle);
             if (info.firstUse == UINT32_MAX)
                 info.firstUse = m_executionOrder[i];
             info.lastUse = m_executionOrder[i];
@@ -570,7 +569,7 @@ void O5MRendergraph::compile(void) {
 
         for (auto write: pass.writes) {
             //firstUse/lastUse
-            auto& info = m_resourceInfos[write.handle];
+            auto& info = m_resourceInfos.at(write.handle);
             if (info.firstUse == UINT32_MAX)
                 info.firstUse = m_executionOrder[i];
             info.lastUse = m_executionOrder[i];
@@ -588,7 +587,7 @@ void O5MRendergraph::compile(void) {
 
         //if it is read&wirte, it must be a imageBuffer
         for (auto readWrite : pass.readWrites) {
-            auto& info = m_resourceInfos[readWrite.handle];
+            auto& info = m_resourceInfos.at(readWrite.handle);
             if (info.firstUse == UINT32_MAX)
                 info.firstUse = m_executionOrder[i];
             info.lastUse = m_executionOrder[i];
@@ -598,7 +597,7 @@ void O5MRendergraph::compile(void) {
     }
     
     //initalize physical resources
-    for (auto [handle, resourceInfo] : m_resourceInfos) {
+    for (const auto& [handle, resourceInfo] : m_resourceInfos) {
         ResourceKind kind = resourceInfo.kind;
         PhysicalResource physicalResource;
         switch (kind) {
@@ -620,28 +619,77 @@ void O5MRendergraph::compile(void) {
                         std::get<ImageInfo>(resourceInfo.info).format);
                 break;
         }
+    }
 
-        //barrier configuration
+    //barrier configuration
+    std::unordered_map<ResourceHandle, SyncScope> stateRecords;
+    for (auto& [handle, info] : m_resourceInfos) {
+        stateRecords[handle] = SyncScope{
+            .stages = vk::PipelineStageFlagBits::eNone,
+            .access = vk::AccessFlagBits::eNone,
+            .layout = vk::ImageLayout::eUndefined
+        };
+    }
+    for (auto passIdx : m_executionOrder) {
+        auto& pass = m_passDescs[passIdx];
+
+        auto barrierConstrution = [&](const UseDecl& use) {
+            SyncScope lastState = stateRecords[use.handle]; 
+            SyncScope currentState = fromUseToSyncScope(pass.kind, use.use);
+
+            pass.compiled.enterBarrier.emplace_back(use.handle, lastState, currentState);
+
+            stateRecords[use.handle] = currentState;
+        };
+
+        auto constructBarrier = [&] (const UseDecl& use) {
+            SyncScope lastState, currentState;
+        };
+
+        std::for_each(pass.reads.begin(), pass.reads.end(), barrierConstrution);
+        std::for_each(pass.writes.begin(), pass.writes.end(), barrierConstrution);
+        std::for_each(pass.readWrites.begin(), pass.readWrites.end(), barrierConstrution);
+
+        //wondering what we should do with aspect&queue
     }
 }
 void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue, vk::raii::Fence* fence) {
     std::vector<vk::raii::CommandBuffer> commandBuffers;
     commandBuffer.begin({});
-    /* this part will be moved into "compile".
-    for (auto passIdx : m_executionOrder) {
-        auto& pass = m_passDescs[passIdx]; // why I can't just simply copy the desc
-        for (auto input : pass.reads) {
-            auto& resourceInfo = m_resourceInfos.at(input.handle);
-            auto& physicalResource = m_physicalResources.at(input.handle);
 
-            switch (resourceInfo.kind) {
-                case ResourceKind::Buffer:
-                    vk::BufferMemoryBarrier barrier{
-                        
+    for (auto passIdx : m_executionOrder) {
+        const auto& pass = m_passDescs[passIdx];
+
+        auto emitBarrier = [&](const BarrierState barrierState) {
+            PhysicalResource& resource = m_physicalResources[barrierState.handle];
+            switch (resource.kind) {
+                case ResourceKind::Buffer: {
+                    vk::BufferMemoryBarrier barrier {
+                        .srcAccessMask = barrierState.from.access,
+                        .dstAccessMask = barrierState.to.access,
+                        .buffer = resource.buffer,
+                        .size = vk::WholeSize,
+                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     };
+                    break;
+                }
+                case ResourceKind::Image: {
+                    vk::ImageMemoryBarrier ImageBarrier {
+                        .srcAccessMask = barrierState.from.access,
+                        .dstAccessMask = barrierState.to.access,
+                        .image = resource.image,
+                        .size = vk::WholeSize,
+                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                        .subresourceRange = {
+                            .aspectMask = 
+                        }
+                    }
+                    break
+                }
             }
-        }
+        };
     }
-    */
 }
 

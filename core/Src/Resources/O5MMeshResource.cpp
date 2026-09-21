@@ -234,7 +234,6 @@ void O5MMeshResource::createVertexBuffer(std::vector<Vertex>& vertices) {
     stagingMemory.unmapMemory();
 
     std::tie(m_meshData->m_vertexBuffer, m_meshData->m_vertexBufferMemory) = 
-        // eTransferSrc：debug 回读（mesh_verify 把顶点/索引拷回 Host 比对）需要
         m_device.createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     m_device.copyBuffer(stagingBuffer, m_meshData->m_vertexBuffer, bufferSize);

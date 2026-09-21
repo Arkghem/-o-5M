@@ -106,8 +106,8 @@ using namespace O5MRendergraphNS;
 //TODO Phase1 start reconstruct the whole rendergraph.
 class O5MRendergraph {
 private:
-    std::unordered_map<uint32_t, ResourceHandle> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
-    std::unordered_map<uint32_t, PhysicalResource> m_physicalResources; //the place we put the physcial resource in
+    std::unordered_map<ResourceHandle, ResourceInfo> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
+    std::unordered_map<ResourceHandle, PhysicalResource> m_physicalResources; //the place we put the physcial resource in
 
     std::vector<PassDesc> m_passDescs;
     std::vector<uint32_t> m_executionOrder;
@@ -116,14 +116,9 @@ private:
 public:
     O5MRendergraph(O5MDevice& device) : m_device(device) {};
 
-    void addResourceInfo(ResourceHandle& info) {
-        auto it = m_resourceInfos.find(info.handle);
-        if (it != m_resourceInfos.end()) {
-            return;
-        }
-
-        m_resourceInfos[info.handle] = info;
-    } 
+    void addResourceInfo(ResourceInfo& info) {
+        m_resourceInfos.try_emplace(info.handle, info);
+    }
 
     template <typename SetupFn, typename ExecuteFn>
         requires std::invocable<SetupFn, O5MPassBuilder&> &&
