@@ -249,6 +249,7 @@ namespace O5MRendergraphNS {
 
     struct BarrierState {
         ResourceHandle handle;
+
         SyncScope from;
         SyncScope to;
     };

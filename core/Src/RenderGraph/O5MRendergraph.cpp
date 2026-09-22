@@ -672,24 +672,36 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     };
+                    commandBuffer.pipelineBarrier(barrierState.from.stages, barrierState.to.stages, {}, {}, barrier, {});
                     break;
                 }
+
                 case ResourceKind::Image: {
                     vk::ImageMemoryBarrier ImageBarrier {
                         .srcAccessMask = barrierState.from.access,
                         .dstAccessMask = barrierState.to.access,
                         .image = resource.image,
-                        .size = vk::WholeSize,
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .subresourceRange = {
-                            .aspectMask = 
+                            .aspectMask = O5MDevice::aspectFromFormat(std::get<ImageInfo>(m_resourceInfos[barrierState.handle].info).format),
+                            .baseMipLevel = 0,
+                            .levelCount = 1,
+                            .baseArrayLayer = 0,
+                            .layerCount = 1
                         }
-                    }
-                    break
+                    };
+                    commandBuffer.pipelineBarrier(barrierState.from.stages, barrierState.to.stages, {}, nullptr, nullptr, ImageBarrier);
+                    break;
                 }
             }
         };
+
+        std::for_each(pass.compiled.enterBarrier.begin(), pass.compiled.enterBarrier.end(), emitBarrier);//iterator to set up barrier
+        O5MRenderContext ctx(pass, m_physicalResources);                            
+        pass.executeFunc(ctx, commandBuffer);
+        //I think this is finished right here
+        //Gosh my embedding server dead 
     }
 }
 

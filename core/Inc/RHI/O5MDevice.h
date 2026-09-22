@@ -11,14 +11,28 @@ public:
     // 由 bootstrap（rhi_verify 的 findGraphicsQueueFamily）选定后传入。
     O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,uint32_t queueFamilyIndex);
 
+    static vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
+        switch (fmt) {
+            case vk::Format::eD32Sfloat:
+            case vk::Format::eD16Unorm:
+            case vk::Format::eX8D24UnormPack32:
+                return vk::ImageAspectFlagBits::eDepth;
+            case vk::Format::eS8Uint:
+                return vk::ImageAspectFlagBits::eStencil;
+            case vk::Format::eD16UnormS8Uint:
+            case vk::Format::eD24UnormS8Uint:
+            case vk::Format::eD32SfloatS8Uint:
+                return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+            default:
+                return vk::ImageAspectFlagBits::eColor;
+        }
+    }
 public:
     vk::raii::Device& getDevice(void) { return m_device; }
     const vk::raii::Device& getDevice(void) const { return m_device; }
     vk::raii::PhysicalDevice& getPhysicalDevice(void) { return m_physicalDevice; }
     vk::raii::Queue& getQueue(void) { return m_queue; } // graphics queue（构造时选定）
-
-    // 按属性过滤 memory type。memoryProperties 在构造时查一次缓存，
-    // 物理设备属性在进程生命周期内不变，每次调用重新 getMemoryProperties() 是浪费。
+                                                        
     uint32_t findMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties) const;
 
     // 线性资源：VBO/IBO/UBO/SSBO/Staging 全走这里。

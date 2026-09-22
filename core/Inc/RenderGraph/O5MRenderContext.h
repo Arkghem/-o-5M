@@ -23,9 +23,9 @@ private:
         }
     }
 public:
-    O5MRenderContext(int frameIndex, const PassDesc& pass, std::unordered_map<uint32_t, PhysicalResource>& ref) :
-    frameIndex(frameIndex),
-    pass(pass){
+    O5MRenderContext(const PassDesc& pass, std::unordered_map<ResourceHandle, PhysicalResource>& ref, int frameIndex = INT_MAX) :
+        frameIndex(frameIndex),
+        pass(pass) {
         for (auto read : pass.reads) 
             physicalResources.push_back({read.handle, ref.at(read.handle)});
         for (auto write : pass.writes) 
