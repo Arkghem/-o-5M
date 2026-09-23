@@ -155,6 +155,9 @@ public:
     void compile(void);
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
                  vk::raii::Fence* fence = nullptr); 
+
+    //debug only: print out the compile result
+    void dump(void) const;
 };
 
 #endif //__O5MRENDERGRAPH__H

@@ -28,8 +28,9 @@ namespace O5MRendergraphNS {
     //using TexHandle = std::uint32_t;
     //using BufHandle = std::uint32_t;
 
-    using ResourceHandle = const std::uint32_t;
-    using UseID = const std::uint32_t;
+    // Note: keep these non-const, otherwise std::hash / unordered_map keys break.
+    using ResourceHandle = std::uint32_t;
+    using UseID = std::uint32_t;
 
     struct PhysicalResource {
         ResourceKind kind;
