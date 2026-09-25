@@ -1,13 +1,13 @@
 #ifndef O5M_RENDERGRAPH_TYPE_H
 #define O5M_RENDERGRAPH_TYPE_H
 
-#include <concepts>
 #include <vector>
 #include <string>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
 #include <utility>
+#include <stdexcept>
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -138,42 +138,60 @@ namespace O5MRendergraphNS {
                     case TexWrite::ColorClear: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
                     case TexWrite::ColorStore: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
                     case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-                    case TexWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
+                    case TexWrite::Storage: return { vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
                     case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
                     }
                 } else if constexpr (std::is_same_v<T, TexRW>) {
                     switch (arg) {
-                        case TexRW::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
+                    case TexRW::Storage: return { vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
                     }
                 } else if constexpr (std::is_same_v<T, BufRead>) {
                     switch (arg) {
-                        case BufRead::Uniform: return { vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
-                        case BufRead::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
-                        case BufRead::VertexIndex: return { vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eIndexRead | vk::AccessFlagBits::eVertexAttributeRead, vk::ImageLayout::eUndefined };
-                        case BufRead::Indirect: return { vk::PipelineStageFlagBits::eDrawIndirect, vk::AccessFlagBits::eIndirectCommandRead, vk::ImageLayout::eUndefined };
-                        case BufRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eUndefined };
+                    case BufRead::Uniform: return { vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
+                    case BufRead::Storage: return { vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
+                    case BufRead::VertexIndex: return { vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eIndexRead | vk::AccessFlagBits::eVertexAttributeRead, vk::ImageLayout::eUndefined };
+                    case BufRead::Indirect: return { vk::PipelineStageFlagBits::eDrawIndirect, vk::AccessFlagBits::eIndirectCommandRead, vk::ImageLayout::eUndefined };
+                    case BufRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eUndefined };
                     }
                 } else if constexpr (std::is_same_v<T, BufWrite>) {
                     switch (arg) {
-                        case BufWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined };
-                        case BufWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined };
-                        case BufWrite::Uniform: return { vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined };
+                    case BufWrite::Storage: return { vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined };
+                    case BufWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined };
+                    case BufWrite::Uniform: throw std::runtime_error("Graphic pass should not write UBO.");
                     }
                 }
             } else if (kind == PassKind::Compute) { 
                 if constexpr (std::is_same_v<T, TexRead>) {
                     switch (arg) {
-                        case TexRead::Sampled: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
-                        case TexRead::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral };
-                        case TexRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eTransferSrcOptimal };
+                    case TexRead::Sampled: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
+                    case TexRead::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral };
+                    case TexRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eTransferSrcOptimal };
                     }
                 } else if constexpr (std::is_same_v<T, TexWrite>) {
                     switch (arg) {
-                        case TexWrite::ColorClear: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
-                        case TexWrite::ColorStore: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
-                        case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-                        case TexWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
-                        case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
+                    case TexWrite::ColorClear: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead, vk::ImageLayout::eColorAttachmentOptimal };
+                    case TexWrite::ColorStore: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead, vk::ImageLayout::eColorAttachmentOptimal };
+                    case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
+                    case TexWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
+                    case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
+                    }
+                } else if constexpr (std::is_same_v<T, TexRW>) {
+                    switch (arg) {
+                    case TexRW::Storage: return {vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
+                    }
+                } else if constexpr (std::is_same_v<T, BufRead>) {
+                    switch (arg) {
+                    case BufRead::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
+                    case BufRead::Indirect: return { vk::PipelineStageFlagBits::eDrawIndirect, vk::AccessFlagBits::eIndirectCommandRead, vk::ImageLayout::eUndefined };
+                    case BufRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eUndefined };
+                    case BufRead::Uniform: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined };
+                    case BufRead::VertexIndex: throw std::runtime_error("Compute pass cannot use vertex/index buffer.");
+                    }
+                } else if constexpr (std::is_same_v<T, BufWrite>) {
+                    switch (arg) {
+                    case BufWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined };
+                    case BufWrite::Uniform: throw std::runtime_error("Compute pass cannot write UBO.");
+                    case BufWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined };
                     }
                 }
             }
@@ -211,11 +229,11 @@ namespace O5MRendergraphNS {
                 }
             } else if constexpr (std::is_same_v<T, TexWrite>) {
                 switch (arg) {
-                    case TexWrite::ColorClear: return vk::ImageUsageFlagBits::eColorAttachment;
-                    case TexWrite::ColorStore: return vk::ImageUsageFlagBits::eColorAttachment;
-                    case TexWrite::Depth: return vk::ImageUsageFlagBits::eDepthStencilAttachment;
-                    case TexWrite::Storage: return vk::ImageUsageFlagBits::eStorage;
-                    case TexWrite::TransferDst: return vk::ImageUsageFlagBits::eTransferDst;
+                case TexWrite::ColorClear: throw std::runtime_error("Cannot derive image usage from ColorClear.");
+                case TexWrite::ColorStore: throw std::runtime_error("Cannot derive image usage from ColorStore.");
+                case TexWrite::Depth: throw std::runtime_error("Cannot derive image usage from Depth.");
+                case TexWrite::Storage: return vk::ImageUsageFlagBits::eStorage;
+                case TexWrite::TransferDst: return vk::ImageUsageFlagBits::eTransferDst;
                 }
             } else {
                 return vk::ImageUsageFlagBits::eStorage;
