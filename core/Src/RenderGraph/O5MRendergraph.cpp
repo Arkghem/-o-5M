@@ -734,8 +734,7 @@ template <typename E>
 std::string_view useEnumName(E value) {
     if constexpr (std::is_same_v<E, TexRead>) {
         switch (value) {
-            case TexRead::Color:       return "TexRead::Color";
-            case TexRead::Depth:       return "TexRead::Depth";
+            case TexRead::Sampled:     return "TexRead::Sampled";
             case TexRead::Storage:     return "TexRead::Storage";
             case TexRead::TransferSrc: return "TexRead::TransferSrc";
         }

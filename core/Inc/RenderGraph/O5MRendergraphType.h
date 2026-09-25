@@ -16,7 +16,7 @@ class O5MRenderContext;
 class O5MPassBuilder;
 
 namespace O5MRendergraphNS {
-    enum class TexRead  { Color, Depth, Storage, TransferSrc }; 
+    enum class TexRead  { Sampled, Storage, TransferSrc }; 
     enum class TexWrite { ColorClear, ColorStore, Depth, Storage, TransferDst }; //mind the difference with Color
     enum class TexRW    { Storage }; //Host or Device
     enum class BufRead  { Uniform, Storage, VertexIndex, Indirect, TransferSrc };
@@ -123,24 +123,23 @@ namespace O5MRendergraphNS {
     };
 
     //bug: alot alot of bugs here, tired of write this, so do it later
-    SyncScope fromUseToSyncScope(PassKind kind, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
+    inline SyncScope fromUseToSyncScope(PassKind kind, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
         return std::visit([kind](auto&& arg) -> SyncScope {
             using T = std::decay_t<decltype(arg)>;
             if (kind == PassKind::Graphic) { 
                 if constexpr (std::is_same_v<T, TexRead>) {
                     switch (arg) {
-                        case TexRead::Color: return { vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
-                        case TexRead::Depth: return { vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
-                        case TexRead::Storage: return { vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral };
-                        case TexRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eTransferSrcOptimal };
+                    case TexRead::Sampled: return { vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
+                    case TexRead::Storage: return { vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral };
+                    case TexRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eTransferSrcOptimal };
                     }
                 } else if constexpr (std::is_same_v<T, TexWrite>) {
                     switch (arg) {
-                        case TexWrite::ColorClear: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
-                        case TexWrite::ColorStore: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
-                        case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-                        case TexWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
-                        case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
+                    case TexWrite::ColorClear: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
+                    case TexWrite::ColorStore: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
+                    case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
+                    case TexWrite::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
+                    case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
                     }
                 } else if constexpr (std::is_same_v<T, TexRW>) {
                     switch (arg) {
@@ -164,8 +163,7 @@ namespace O5MRendergraphNS {
             } else if (kind == PassKind::Compute) { 
                 if constexpr (std::is_same_v<T, TexRead>) {
                     switch (arg) {
-                        case TexRead::Color: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
-                        case TexRead::Depth: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
+                        case TexRead::Sampled: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal };
                         case TexRead::Storage: return { vk::PipelineStageFlagBits::eComputeShader, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral };
                         case TexRead::TransferSrc: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eTransferSrcOptimal };
                     }
@@ -193,7 +191,7 @@ namespace O5MRendergraphNS {
         //auto-allocated from debugName, don't fill it by hand
         std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use;
 
-        //e.g. builder.read({"sceneColor", TexRead::Color})
+        //e.g. builder.read({"sceneColor", TexRead::Sampled})
         UseDecl(ResourceInfo resourceHandle,
                 std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> u):
             handle(resourceHandle.handle), use(std::move(u)), id(allocateUseID()){
@@ -207,8 +205,7 @@ namespace O5MRendergraphNS {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, TexRead>) {
                 switch (arg) {
-                    case TexRead::Color: return vk::ImageUsageFlagBits::eSampled;
-                    case TexRead::Depth: return vk::ImageUsageFlagBits::eSampled;
+                    case TexRead::Sampled: return vk::ImageUsageFlagBits::eSampled;
                     case TexRead::Storage: return vk::ImageUsageFlagBits::eStorage;
                     case TexRead::TransferSrc: return vk::ImageUsageFlagBits::eTransferSrc;
                 }
