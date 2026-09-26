@@ -623,6 +623,7 @@ void O5MRendergraph::compile(void) {
                         std::get<ImageInfo>(resourceInfo.info).format);
                 break;
         }
+        m_physicalResources.emplace(handle, std::move(physicalResource));
     }
 
     //barrier configuration
@@ -706,6 +707,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
         pass.executeFunc(ctx, commandBuffer);
         //I think this is finished right here
         //Gosh my embedding server dead 
+       
     }
 
     commandBuffer.end();

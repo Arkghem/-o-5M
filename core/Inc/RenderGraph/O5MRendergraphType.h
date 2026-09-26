@@ -229,9 +229,9 @@ namespace O5MRendergraphNS {
                 }
             } else if constexpr (std::is_same_v<T, TexWrite>) {
                 switch (arg) {
-                case TexWrite::ColorClear: throw std::runtime_error("Cannot derive image usage from ColorClear.");
-                case TexWrite::ColorStore: throw std::runtime_error("Cannot derive image usage from ColorStore.");
-                case TexWrite::Depth: throw std::runtime_error("Cannot derive image usage from Depth.");
+                case TexWrite::ColorClear: return vk::ImageUsageFlagBits::eColorAttachment;
+                case TexWrite::ColorStore: return vk::ImageUsageFlagBits::eColorAttachment;
+                case TexWrite::Depth: return vk::ImageUsageFlagBits::eDepthStencilAttachment;
                 case TexWrite::Storage: return vk::ImageUsageFlagBits::eStorage;
                 case TexWrite::TransferDst: return vk::ImageUsageFlagBits::eTransferDst;
                 }
