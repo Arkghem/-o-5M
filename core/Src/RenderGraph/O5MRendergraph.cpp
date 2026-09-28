@@ -483,7 +483,8 @@ void O5MRendergraph::compile(void) {
     }
 
     //cycle detect
-    std::queue<uint32_t> queue;
+    //deprecated
+    /*std::queue<uint32_t> queue;
     std::vector<bool> visited(m_passDescs.size(), false);
     queue.push(0);
     while (!queue.empty()) {
@@ -509,7 +510,7 @@ void O5MRendergraph::compile(void) {
             else
                 throw std::runtime_error("Cycle detected in render graph");
         }
-    }
+    }*/
 
     //Kahn sort
     m_executionOrder.clear();
@@ -549,6 +550,9 @@ void O5MRendergraph::compile(void) {
             }
         }
     }
+
+    if (m_executionOrder.size() != m_passDescs.size()) 
+        throw std::runtime_error("Cycle detected in render graph");
 
     //resource lifecycle management& usage convertationk
     for (size_t i = 0; i < m_executionOrder.size(); i++) {
@@ -620,7 +624,7 @@ void O5MRendergraph::compile(void) {
 
                 //createImageView
                 physicalResource.view = m_device.createImageView2D(physicalResource.image,
-                        std::get<ImageInfo>(resourceInfo.info).format);
+                       std::get<ImageInfo>(resourceInfo.info).format);
                 break;
         }
         m_physicalResources.emplace(handle, std::move(physicalResource));
@@ -880,4 +884,3 @@ void O5MRendergraph::dump(void) const {
 
     std::cout << "==== end dump ====\n";
 }
-
