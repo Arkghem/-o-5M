@@ -34,9 +34,11 @@ public:
             physicalResources.push_back({readWrite.handle, ref.at(readWrite.handle)});
     }
 
-    vk::Buffer     getBuffer(uint32_t handle) const { return get(handle).buffer; }
-    vk::Image      getImage(uint32_t handle) const { return get(handle).image; }
-    vk::ImageView  getImageView(uint32_t handle) const { return get(handle).view; }
+    vk::Buffer     getBuffer(uint32_t handle) const { 
+        return get(handle).resource == ResourceSource::Created ? std::visit([&](auto&& v) { return v.buffer; }, ref.at(handle).buffer)
+    }
+    vk::Image      getImage(uint32_t handle) const { return get(handle).; }
+    vk::ImageView  getImageView(uint32_t handle) const { return get(handle).; }
 
     vk::ImageView  getHistory(uint32_t handle) const; //get the imageView from last frame
 

@@ -103,7 +103,7 @@ public:
 
 using namespace O5MRendergraphNS;
 
-//TODO Phase1 start reconstruct the whole rendergraph.
+//TODO: Input&Output pass need to be clarified in this graph.
 class O5MRendergraph {
 private:
     std::unordered_map<ResourceHandle, ResourceInfo> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
@@ -120,6 +120,7 @@ public:
         m_resourceInfos.try_emplace(info.handle, info);
     }
 
+    //In the future we might need to write a pass handle generator to replace the index.
     template <typename SetupFn, typename ExecuteFn>
         requires std::invocable<SetupFn, O5MPassBuilder&> &&
                  std::invocable<ExecuteFn, O5MRenderContext&, vk::raii::CommandBuffer&> 
@@ -151,6 +152,13 @@ public:
 
         m_passDescs.push_back(passDesc);
     }
+
+    //external resource import. not clear if it will goes into m_physicalResources
+    ResourceHandle importTexture(std::string debugName, vk::raii::ImageView view,
+                                 vk::Format format, vk::Extent2D extent,
+                                 vk::ImageUsageFlags actualUsage, vk::ImageLayout currentLayout);
+
+    ResourceHandle importBuffer(std::string debugName, vk::Buffer buffer, vk::DeviceSize size);
 
     void compile(void);
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,

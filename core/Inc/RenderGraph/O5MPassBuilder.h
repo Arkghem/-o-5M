@@ -1,9 +1,6 @@
 #ifndef O5MPASSBUILDER_H
 #define O5MPASSBUILDER_H
 
-#include <concepts>
-#include <string>
-
 #include "O5MRendergraphType.h"
 
 using namespace O5MRendergraphNS;

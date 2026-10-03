@@ -24,6 +24,7 @@ namespace O5MRendergraphNS {
 
     enum class PassKind { Graphic, Compute };
     enum class ResourceKind { Buffer, Image };
+    enum class ResourceSource { Created, Imported };
     
     //using TexHandle = std::uint32_t;
     //using BufHandle = std::uint32_t;
@@ -32,12 +33,48 @@ namespace O5MRendergraphNS {
     using ResourceHandle = std::uint32_t;
     using UseID = std::uint32_t;
 
+    //TODO: access interface
     struct PhysicalResource {
+        struct OwnedResource{
+            vk::raii::Image image = nullptr;
+            vk::raii::Buffer buffer = nullptr;
+            vk::raii::ImageView view = nullptr;
+            vk::raii::DeviceMemory memory = nullptr;
+        };
+
+        struct ImportedResource {
+            vk::Image image = nullptr;
+            vk::Buffer buffer = nullptr;
+            vk::ImageView view = nullptr;
+        };
+
         ResourceKind kind;
-        vk::raii::DeviceMemory memory = nullptr;
-        vk::raii::Image image = nullptr;
-        vk::raii::ImageView view = nullptr;
-        vk::raii::Buffer buffer = nullptr;
+        ResourceSource source;
+        std::variant<OwnedResource, ImportedResource> resource;
+
+        vk::Image getImage(void) {
+            return source == ResourceSource::Imported 
+                ? std::get<ImportedResource>(resource).image 
+                : std::get<OwnedResource>(resource).image;
+        }
+
+        vk::Buffer getBuffer(void) {
+            return source == ResourceSource::Imported 
+                ? std::get<ImportedResource>(resource).buffer 
+                : std::get<OwnedResource>(resource).buffer;
+        }
+
+        vk::ImageView getView(void) {
+            source == ResourceSource::Imported 
+                ? std::get<ImportedResource>(resource).view 
+                : std::get<OwnedResource>(resource).view;
+        }
+
+        vk::DeviceMemory getMemory(void) {
+            if (source == ResourceSource::Imported)
+                 throw std::runtime_error("Imported resource does not own device memory.");
+             return std::get<OwnedResource>(resource).memory;
+        }
     };
 
     //Minimal handle auto-allocation: name interning.
@@ -66,11 +103,13 @@ namespace O5MRendergraphNS {
         vk::ImageUsageFlags usage;
     };
 
+    //maybe we need to expose an api to create 'ResourceInfo' for user.
     struct ResourceInfo {
         std::string debugName;
         ResourceHandle handle;
 
         ResourceKind kind;
+        ResourceSource source;
         uint32_t firstUse = UINT32_MAX;
         uint32_t lastUse = 0;
 
@@ -80,6 +119,7 @@ namespace O5MRendergraphNS {
             : debugName(other.debugName),
               handle(other.handle),
               kind(other.kind),
+              source(other.source),
               firstUse(other.firstUse),
               lastUse(other.lastUse),
               info(other.info) {}
@@ -87,20 +127,24 @@ namespace O5MRendergraphNS {
         ResourceInfo(
             std::string& debugName,
             vk::Extent2D extent,
-            vk::Format format
+            vk::Format format,
+            ResourceSource source = ResourceSource::Created
         )
             :debugName(debugName),
             handle(internResourceName(debugName)),
             kind(ResourceKind::Image), 
+            source(source),
             info(ImageInfo{ extent, format, {},}) {}
 
         ResourceInfo(
             std::string& debugName,
-            vk::DeviceSize size
+            vk::DeviceSize size,
+            ResourceSource source = ResourceSource::Created
         )
             : debugName(debugName),
             handle(internResourceName(debugName)), 
             kind(ResourceKind::Buffer), 
+            source(source),
             info(BufferInfo{size, {},}) {}
     };
 

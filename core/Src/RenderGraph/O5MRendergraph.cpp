@@ -431,6 +431,22 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
 }
 */
 
+ResourceHandle O5MRendergraph::importTexture(
+    std::string debugName,
+    vk::raii::ImageView view,
+    vk::Format format,
+    vk::Extent2D extent,
+    vk::ImageUsageFlags actualUsage,
+    vk::ImageLayout currentLayout
+) {
+    ResourceInfo info(debugName, extent, format, ResourceSource::Imported);
+    addResourceInfo(info);
+
+    return info.handle;
+}
+
+    
+
 enum class EdgeKind { RAW, WAR, /*WAW*/ }; 
 //due to the single-writer restriction, WAW is unavailable for now
 
@@ -608,22 +624,24 @@ void O5MRendergraph::compile(void) {
     for (const auto& [handle, resourceInfo] : m_resourceInfos) {
         ResourceKind kind = resourceInfo.kind;
         PhysicalResource physicalResource;
+        physicalResource.resource = PhysicalResource::OwnedResource();
+        auto& owned = std::get<PhysicalResource::OwnedResource>(physicalResource.resource);
         switch (kind) {
             case ResourceKind::Buffer: 
-                std::tie(physicalResource.buffer, physicalResource.memory) =
+                std::tie(owned.buffer, owned.memory) =
                     m_device.createBuffer(std::get<BufferInfo>(resourceInfo.info).size,
                         std::get<BufferInfo>(resourceInfo.info).usage,
                         vk::MemoryPropertyFlagBits::eDeviceLocal);
                 break;
             case ResourceKind::Image:
-                std::tie(physicalResource.image, physicalResource.memory) =
+                std::tie(owned.image, owned.memory) =
                     m_device.createImage2D(std::get<ImageInfo>(resourceInfo.info).format,
                         std::get<ImageInfo>(resourceInfo.info).extent, 1,
                         vk::ImageTiling::eOptimal, std::get<ImageInfo>(resourceInfo.info).usage,
                         vk::MemoryPropertyFlagBits::eDeviceLocal);
 
                 //createImageView
-                physicalResource.view = m_device.createImageView2D(physicalResource.image,
+                owned.view = m_device.createImageView2D(owned.image,
                        std::get<ImageInfo>(resourceInfo.info).format);
                 break;
         }
@@ -676,7 +694,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                     vk::BufferMemoryBarrier barrier {
                         .srcAccessMask = barrierState.from.access,
                         .dstAccessMask = barrierState.to.access,
-                        .buffer = resource.buffer,
+                        .buffer = resource.getBuffer(),
                         .size = vk::WholeSize,
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -689,7 +707,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                     vk::ImageMemoryBarrier ImageBarrier {
                         .srcAccessMask = barrierState.from.access,
                         .dstAccessMask = barrierState.to.access,
-                        .image = resource.image,
+                        .image = resource.getImage(),
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .subresourceRange = {
