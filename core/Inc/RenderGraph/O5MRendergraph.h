@@ -154,11 +154,22 @@ public:
     }
 
     //external resource import. not clear if it will goes into m_physicalResources
-    ResourceHandle importTexture(std::string debugName, vk::raii::ImageView view,
-                                 vk::Format format, vk::Extent2D extent,
-                                 vk::ImageUsageFlags actualUsage, vk::ImageLayout currentLayout);
+    ResourceHandle importTexture(
+        std::string debugName,
+        vk::Image image,
+        vk::ImageView view,
+        vk::Format format,
+        vk::Extent2D extent,
+        vk::ImageUsageFlags actualUsage,
+        vk::ImageLayout currentLayout
+    );
 
-    ResourceHandle importBuffer(std::string debugName, vk::Buffer buffer, vk::DeviceSize size);
+    ResourceHandle importBuffer(
+        std::string debugName,
+        vk::Buffer buffer,
+        vk::DeviceSize size,
+        vk::BufferUsageFlags actualUsage
+    );
 
     void compile(void);
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,

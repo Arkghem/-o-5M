@@ -34,6 +34,7 @@ namespace O5MRendergraphNS {
     using UseID = std::uint32_t;
 
     //TODO: access interface
+    //Still don't understand why I use variant or don'
     struct PhysicalResource {
         struct OwnedResource{
             vk::raii::Image image = nullptr;
@@ -44,8 +45,8 @@ namespace O5MRendergraphNS {
 
         struct ImportedResource {
             vk::Image image = nullptr;
-            vk::Buffer buffer = nullptr;
             vk::ImageView view = nullptr;
+            vk::Buffer buffer = nullptr;
         };
 
         ResourceKind kind;
@@ -101,6 +102,7 @@ namespace O5MRendergraphNS {
         vk::Extent2D extent;
         vk::Format format;
         vk::ImageUsageFlags usage;
+        vk::ImageLayout initalLayout = vk::ImageLayout::eUndefined;
     };
 
     //maybe we need to expose an api to create 'ResourceInfo' for user.

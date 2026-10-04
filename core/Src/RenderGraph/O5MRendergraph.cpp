@@ -433,26 +433,61 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
 
 ResourceHandle O5MRendergraph::importTexture(
     std::string debugName,
-    vk::raii::ImageView view,
+    vk::Image image,
+    vk::ImageView view,
     vk::Format format,
     vk::Extent2D extent,
     vk::ImageUsageFlags actualUsage,
     vk::ImageLayout currentLayout
 ) {
     ResourceInfo info(debugName, extent, format, ResourceSource::Imported);
+    std::get<ImageInfo>(info.info).usage = actualUsage;
+    std::get<ImageInfo>(info.info).initalLayout = currentLayout;
     addResourceInfo(info);
+
+    PhysicalResource physical = {
+        .kind = ResourceKind::Image,
+        .source = ResourceSource::Imported,
+        .resource = PhysicalResource::ImportedResource {
+            .image = image,
+            .view = view
+        }
+    };
+
+    m_physicalResources.emplace(info.handle, std::move(physical));
 
     return info.handle;
 }
 
-    
+ResourceHandle O5MRendergraph::importBuffer(
+    std::string debugName,
+    vk::Buffer buffer,
+    vk::DeviceSize size,
+    vk::BufferUsageFlags actualUsage
+) {
+    ResourceInfo info(debugName, size, ResourceSource::Imported);
+    std::get<BufferInfo>(info.info).usage = actualUsage;
+    addResourceInfo(info);
+
+    PhysicalResource physical = {
+        .kind = ResourceKind::Image,
+        .source = ResourceSource::Imported,
+        .resource = PhysicalResource::ImportedResource {
+            .buffer = buffer
+        }
+    };
+
+    m_physicalResources.emplace(info.handle, std::move(physical));
+
+    return info.handle;
+}
 
 enum class EdgeKind { RAW, WAR, /*WAW*/ }; 
 //due to the single-writer restriction, WAW is unavailable for now
 
 struct Node {
     uint32_t index; //index into m_passDescs
-    std::vector<uint32_t> RAW;   
+    std::vector<uint32_t> RAW;
     std::vector<uint32_t> WAR;
     std::vector<uint32_t> WAW;
 
@@ -581,13 +616,28 @@ void O5MRendergraph::compile(void) {
             info.lastUse = m_executionOrder[i];
 
             ResourceKind k = declareKind(read.use);
-            switch (k) {
-                case ResourceKind::Buffer: 
-                    std::get<BufferInfo>(info.info).usage |= toBufferUsage(read.use);
-                    break;
-                case ResourceKind::Image:
-                    std::get<ImageInfo>(info.info).usage |= toImageUsage(read.use);
-                    break;
+            if(info.source == ResourceSource::Created) {
+                //Add UsageBit for Created resource
+                switch (k) {
+                    case ResourceKind::Buffer: 
+                        std::get<BufferInfo>(info.info).usage |= toBufferUsage(read.use);
+                        break;
+                    case ResourceKind::Image:
+                        std::get<ImageInfo>(info.info).usage |= toImageUsage(read.use);
+                        break;
+                }
+            } else if (info.source == ResourceSource::Imported) {
+                //Verify UsageBit for Imported resource
+                switch (k) {
+                    case ResourceKind::Buffer:
+                        if (!(std::get<BufferInfo>(info.info).usage & toBufferUsage(read.use)))
+                            throw std::runtime_error("Imported resource does not support usage: " + read.handle);
+                        break;
+                    case ResourceKind::Image:
+                        if (!(std::get<ImageInfo>(info.info).usage & toImageUsage(read.use)))
+                            throw std::runtime_error("Imported resource does not support usage: " + read.handle);
+                        break;
+                }
             }
         }
 
@@ -654,9 +704,10 @@ void O5MRendergraph::compile(void) {
         stateRecords[handle] = SyncScope{
             .stages = vk::PipelineStageFlagBits::eNone,
             .access = vk::AccessFlagBits::eNone,
-            .layout = vk::ImageLayout::eUndefined
+            .layout = std::get<ImageInfo>(info.info).initalLayout
         };
     }
+
     for (auto passIdx : m_executionOrder) {
         auto& pass = m_passDescs[passIdx];
 
