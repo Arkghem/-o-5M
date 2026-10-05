@@ -21,6 +21,7 @@ public:
     //shit code here, alil' fuction push this info into rendergraph
     void addResource(ResourceInfo&);
 
+    //when create info, the source is not clarified.
     void read(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
         m_passDesc.reads.emplace_back(info, use); 
         addResource(info);
@@ -31,6 +32,12 @@ public:
     }
     void readwrite(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use) {
         m_passDesc.readWrites.emplace_back(info, use);
+        addResource(info);
+    }
+
+    void readHistory(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use
+    ) {
+        m_passDesc.readHistorys.emplace_back(info, use);
         addResource(info);
     }
 };

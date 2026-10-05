@@ -659,6 +659,25 @@ void O5MRendergraph::compile(void) {
             }
         }
 
+        //Im not sure about all this.
+        for (auto readHistory : pass.readHistorys){
+            //firstUse/lastUse
+            auto& info = m_resourceInfos.at(readHistory.handle);
+             if (info.firstUse == UINT32_MAX)
+                info.firstUse = m_executionOrder[i];
+           info.lastUse = m_executionOrder[i];
+
+           ResourceKind k = declareKind(readHistory.use);
+           switch (k) {
+                case ResourceKind::Buffer: 
+                    std::get<BufferInfo>(info.info).usage |= toBufferUsage(readHistory.use);
+                    break;
+                case ResourceKind::Image:
+                    std::get<ImageInfo>(info.info).usage |= toImageUsage(readHistory.use);
+                    break;
+            }
+       }
+
         //if it is read&wirte, it must be a imageBuffer
         for (auto readWrite : pass.readWrites) {
             auto& info = m_resourceInfos.at(readWrite.handle);

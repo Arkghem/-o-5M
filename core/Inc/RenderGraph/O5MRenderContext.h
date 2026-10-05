@@ -9,14 +9,14 @@
 
 using namespace O5MRendergraphNS;
 
-//Honestly, I still don't really understand what is this class for.
+//Context pass the reference of the vulkan resource.
 class O5MRenderContext {
 private:
-    std::vector<std::pair<uint32_t, const PhysicalResource&>> physicalResources; 
+    std::vector<std::pair<uint32_t, PhysicalResource&>> physicalResources; 
     const PassDesc& pass;
-    const int frameIndex;
+    const int frameIndex; //readHistory support
 
-    const PhysicalResource& get(uint32_t handle) const {
+    PhysicalResource& get(uint32_t handle) const {
         for (auto [h, res] : physicalResources) {
             if (h == handle) 
                 return res;
@@ -34,11 +34,12 @@ public:
             physicalResources.push_back({readWrite.handle, ref.at(readWrite.handle)});
     }
 
-    vk::Buffer     getBuffer(uint32_t handle) const { 
-        return get(handle).resource == ResourceSource::Created ? std::visit([&](auto&& v) { return v.buffer; }, ref.at(handle).buffer)
-    }
-    vk::Image      getImage(uint32_t handle) const { return get(handle).; }
-    vk::ImageView  getImageView(uint32_t handle) const { return get(handle).; }
+    //no idea about wtf is these.
+    //TODO: fixthis
+    //TODO: readHistory support
+    vk::Buffer getBuffer(uint32_t handle) { return get(handle).getBuffer(); }
+    vk::Image      getImage(uint32_t handle) { return get(handle).getImage(); }
+    vk::ImageView  getImageView(uint32_t handle) { return get(handle).getView(); }
 
     vk::ImageView  getHistory(uint32_t handle) const; //get the imageView from last frame
 

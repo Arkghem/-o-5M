@@ -16,7 +16,7 @@ class O5MRenderContext;
 class O5MPassBuilder;
 
 namespace O5MRendergraphNS {
-    enum class TexRead  { Sampled, Storage, TransferSrc }; 
+    enum class TexRead  { Sampled, Storage, TransferSrc};
     enum class TexWrite { ColorClear, ColorStore, Depth, Storage, TransferDst }; //mind the difference with Color
     enum class TexRW    { Storage }; //Host or Device
     enum class BufRead  { Uniform, Storage, VertexIndex, Indirect, TransferSrc };
@@ -315,6 +315,7 @@ namespace O5MRendergraphNS {
         SyncScope from;
         SyncScope to;
     };
+
     struct PassDesc {
         struct Compiled {
             std::vector<BarrierState> enterBarrier;//from to
@@ -326,6 +327,8 @@ namespace O5MRendergraphNS {
         std::vector<UseDecl> reads;
         std::vector<UseDecl> writes;
         std::vector<UseDecl> readWrites;
+        //for readHistory function, won't interfere with current resource dependency graph
+        std::vector<UseDecl> readHistorys;
         std::function<void(O5MRenderContext&, vk::raii::CommandBuffer&)> executeFunc;
     };
 };
