@@ -498,11 +498,18 @@ void O5MRendergraph::compile(void) {
     std::unordered_map<uint32_t, uint32_t> resourceWriters;              //resource handle -> writer pass index
     std::unordered_map<uint32_t, std::vector<uint32_t>> resourceReaders; //resource handle -> reader pass indices
 
+    std::vector<uint32_t> rootPasses;
+
     //Resource writer detect
     for (uint32_t passIdx = 0; passIdx < m_passDescs.size(); ++passIdx) {
         const auto& pass = m_passDescs[passIdx];
         for (const auto& write : pass.writes) {
             resourceWriters[write.handle] = passIdx;
+
+            //root passes detection
+            if (std::ranges::any_of(m_outputResources.begin(), m_outputResources.end(), [&write](ResourceHandle handle) { return handle == write.handle; })) {
+                rootPasses.push_back(passIdx);
+            }
         }
         for (const auto& read : pass.reads) {
             resourceReaders[read.handle].push_back(passIdx);
@@ -605,7 +612,35 @@ void O5MRendergraph::compile(void) {
     if (m_executionOrder.size() != m_passDescs.size()) 
         throw std::runtime_error("Cycle detected in render graph");
 
-    //resource lifecycle management& usage convertationk
+    //unvisited pass culling
+    //BST with root passes;
+    std::vector<bool> culled(m_passDescs.size(), true);
+    std::queue<uint32_t> bfs;
+    for (auto passIdx : rootPasses) {
+        bfs.push(passIdx);
+        culled[passIdx] = false;
+    }
+    while (!bfs.empty()) {
+        auto idx = bfs.front();
+        bfs.pop();
+        for (auto dep : nodes[idx].RAW) {
+            if (!culled[dep]) {
+                culled[dep] = false;
+                bfs.push(dep);
+            }
+        }
+        for (auto dep : nodes[idx].WAR) {
+            if (!culled[dep]) {
+                culled[dep] = false;
+                bfs.push(dep);
+            }
+        }
+    }
+
+    //remove culled passes
+    std::erase_if(m_executionOrder, [&](uint32_t idx) { return culled[idx];});
+
+    //resource lifecycle management& usage convertation
     for (size_t i = 0; i < m_executionOrder.size(); i++) {
         auto& pass = m_passDescs[m_executionOrder[i]];
         for (auto read : pass.reads) {
@@ -750,6 +785,7 @@ void O5MRendergraph::compile(void) {
         //wondering what we should do with aspect&queue
     }
 }
+
 void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue, vk::raii::Fence* fence) {
     std::vector<vk::raii::CommandBuffer> commandBuffers;
     commandBuffer.begin({});

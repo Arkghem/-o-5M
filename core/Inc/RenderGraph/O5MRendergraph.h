@@ -112,12 +112,23 @@ private:
     std::vector<PassDesc> m_passDescs;
     std::vector<uint32_t> m_executionOrder;
 
+    std::vector<ResourceHandle> m_outputResources;
+
     O5MDevice& m_device;
 public:
     O5MRendergraph(O5MDevice& device) : m_device(device) {};
 
     void addResourceInfo(ResourceInfo& info) {
         m_resourceInfos.try_emplace(info.handle, info);
+    }
+
+    void markOutput(ResourceHandle handle) {
+        // Fail fast: only the handle is known here, names live in ResourceInfo
+        // and are unreachable when the lookup misses.
+        if (!m_resourceInfos.contains(handle))
+            throw std::runtime_error("Output resource handle " + std::to_string(handle) +
+                                     " not found in the graph.");
+        m_outputResources.push_back(handle);
     }
 
     //In the future we might need to write a pass handle generator to replace the index.
