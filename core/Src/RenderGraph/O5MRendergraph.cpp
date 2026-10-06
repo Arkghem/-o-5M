@@ -470,7 +470,7 @@ ResourceHandle O5MRendergraph::importBuffer(
     addResourceInfo(info);
 
     PhysicalResource physical = {
-        .kind = ResourceKind::Image,
+        .kind = ResourceKind::Buffer,
         .source = ResourceSource::Imported,
         .resource = PhysicalResource::ImportedResource {
             .buffer = buffer
@@ -573,14 +573,11 @@ void O5MRendergraph::compile(void) {
     //Kahn sort
     m_executionOrder.clear();
 
-    //count the inDegree
+    // Edge direction: node.RAW lists this pass's dependencies (writers it reads
+    // from, incoming edges). node.WAR lists its dependents (readers of this
+    // pass's outputs, outgoing edges). Only incoming edges feed in-degree.
     for (auto& [idx, node] : nodes) {
-        for (auto dep : node.RAW) {
-            node.inDegree++;
-        }
-        for (auto dep : node.WAR) {
-            node.inDegree++;
-        }
+        node.inDegree = static_cast<int>(node.RAW.size());
     }
 
     std::queue<uint32_t> readyQueue;
@@ -595,16 +592,10 @@ void O5MRendergraph::compile(void) {
         readyQueue.pop();
         m_executionOrder.push_back(idx);
 
-        for (auto dep : nodes[idx].RAW) {
-            nodes[dep].inDegree--;
-            if (nodes[dep].inDegree == 0) {
-                readyQueue.push(dep);
-            }
-        }
-        for (auto dep : nodes[idx].WAR) {
-            nodes[dep].inDegree--;
-            if (nodes[dep].inDegree == 0) {
-                readyQueue.push(dep);
+        // scheduling idx releases its dependents (readers of its outputs)
+        for (auto dependent : nodes[idx].WAR) {
+            if (--nodes[dependent].inDegree == 0) {
+                readyQueue.push(dependent);
             }
         }
     }
@@ -623,14 +614,10 @@ void O5MRendergraph::compile(void) {
     while (!bfs.empty()) {
         auto idx = bfs.front();
         bfs.pop();
+        // walk upstream only: RAW lists the writers that produce this pass's
+        // inputs; WAR would walk downstream consumers, which don't contribute.
         for (auto dep : nodes[idx].RAW) {
-            if (!culled[dep]) {
-                culled[dep] = false;
-                bfs.push(dep);
-            }
-        }
-        for (auto dep : nodes[idx].WAR) {
-            if (!culled[dep]) {
+            if (culled[dep]) {
                 culled[dep] = false;
                 bfs.push(dep);
             }
@@ -724,10 +711,16 @@ void O5MRendergraph::compile(void) {
         }
     }
     
-    //initalize physical resources
+    //initalize physical resources (created resources only; imported ones
+    //already have their physical entry from importTexture/importBuffer)
     for (const auto& [handle, resourceInfo] : m_resourceInfos) {
+        if (resourceInfo.source == ResourceSource::Imported)
+            continue;
+
         ResourceKind kind = resourceInfo.kind;
         PhysicalResource physicalResource;
+        physicalResource.kind = kind;
+        physicalResource.source = ResourceSource::Created;
         physicalResource.resource = PhysicalResource::OwnedResource();
         auto& owned = std::get<PhysicalResource::OwnedResource>(physicalResource.resource);
         switch (kind) {
@@ -755,10 +748,16 @@ void O5MRendergraph::compile(void) {
     //barrier configuration
     std::unordered_map<ResourceHandle, SyncScope> stateRecords;
     for (auto& [handle, info] : m_resourceInfos) {
+        // only images have a layout; buffers start with no layout state.
+        // eTopOfPipe: old-style pipelineBarrier requires a non-zero srcStageMask.
+        const vk::ImageLayout initialLayout =
+            info.kind == ResourceKind::Image
+                ? std::get<ImageInfo>(info.info).initalLayout
+                : vk::ImageLayout::eUndefined;
         stateRecords[handle] = SyncScope{
-            .stages = vk::PipelineStageFlagBits::eNone,
+            .stages = vk::PipelineStageFlagBits::eTopOfPipe,
             .access = vk::AccessFlagBits::eNone,
-            .layout = std::get<ImageInfo>(info.info).initalLayout
+            .layout = initialLayout
         };
     }
 
@@ -813,6 +812,8 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                     vk::ImageMemoryBarrier ImageBarrier {
                         .srcAccessMask = barrierState.from.access,
                         .dstAccessMask = barrierState.to.access,
+                        .oldLayout = barrierState.from.layout,
+                        .newLayout = barrierState.to.layout,
                         .image = resource.getImage(),
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,

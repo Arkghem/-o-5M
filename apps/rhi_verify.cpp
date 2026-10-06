@@ -1,24 +1,27 @@
-// rhi_verify — rendergraph 离屏渲染链路验证（无窗口）
+// rhi_verify -- offscreen rendergraph verification (no window), Phase 1 API.
 //
-// 链路：render(UBO 控制, 写 sceneColor/RGBA16F)
-//     -> postprocess(采样 sceneColor, Reinhard tonemap + gamma, 写 finalColor/RGBA8)
-//     -> readback(copyImageToBuffer -> HOST_VISIBLE buffer)
-//     -> CPU 逐像素校验（期望值用同一套数学在 CPU 复算，容差 ±2/255）
+// Chain: render(UBO-driven, writes sceneColor/RGBA16F)
+//     -> postprocess(samples sceneColor, Reinhard tonemap + gamma, writes finalColor/RGBA8)
+//     -> readback(copyImageToBuffer -> HOST_VISIBLE buffer, imported)
+//     -> CPU per-pixel verification (same math recomputed, tolerance 2/255)
 //
-// 验证内容：
-//   1. O5MDevice bootstrap + dynamic rendering（Vulkan 1.2 + 扩展）
-//   2. rendergraph: image/buffer 资源、三 pass 依赖排序、自动 barrier
-//   3. descriptor set（UBO + combined image sampler）
-//   4. buffer 资源链路（UBO host 写入 -> shader 读；TransferDst 回读）
-//   5. fence 同步（替代 waitIdle）+ 回读校验退出码
+// Verified:
+//   1. O5MDevice bootstrap + dynamic rendering (Vulkan 1.2 + extensions)
+//   2. RenderGraph Phase 1: ResourceInfo declaration, PassBuilder setup,
+//      derived usage flags, topological sort, dead-pass culling via markOutput,
+//      compile-time barrier planning, replay-style execute
+//   3. Imported buffer resources (params UBO + readback own their memory)
+//   4. Descriptor set (UBO + combined image sampler)
+//   5. Fence sync + pixel validation, exit code = pass/fail
 //
-// 退出码：0 = 全链路通过；非 0 = 失败（异常信息打印到 stderr）。
+// Exit code: 0 = full chain passed; non-zero = failed (error to stderr).
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -32,14 +35,14 @@
 namespace {
 
 #ifdef __APPLE__
-// MoltenVK 要求显式开启 portability 枚举，否则枚举不到任何物理设备
+// MoltenVK requires explicit portability enumeration, else no physical devices
 const std::vector<const char*> kInstanceExtensions = {
     VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
 };
-// 该 SDK 头文件未定义 VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME 宏，用字符串字面量
+// The SDK header does not define VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
 const std::vector<const char*> kDeviceExtensions = {
     "VK_KHR_portability_subset",
-    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME // dynamic rendering（Vulkan 1.3 转正，1.2 走扩展）
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
 };
 #else
 const std::vector<const char*> kInstanceExtensions = {};
@@ -58,10 +61,9 @@ uint32_t findGraphicsQueueFamily(const vk::PhysicalDevice& physicalDevice) {
     throw std::runtime_error("no graphics queue family found");
 }
 
-// ---- GLSL 源（内嵌字符串，O5MShaderResource 运行时经 shaderc 编译成 SPIR-V）----
-// 入口名必须是 main：GLSL 经 shaderc 编译不支持自定义入口名。
+// ---- embedded GLSL, compiled at runtime through O5MShaderResource/shaderc ----
 
-// fullscreen triangle：3 个顶点 (-1,-1) (3,-1) (-1,3)，无顶点缓冲
+// fullscreen triangle: 3 vertices (-1,-1) (3,-1) (-1,3), no vertex buffer
 const char* kFullscreenVert = R"GLSL(
 #version 450
 layout(location = 0) out vec2 vUV;
@@ -72,7 +74,7 @@ void main() {
 }
 )GLSL";
 
-// render pass：UV 渐变 * UBO 里的 exposure（验证 buffer 资源 host->shader 链路）
+// render pass: UV gradient * exposure from UBO (validates buffer -> shader path)
 const char* kSceneFrag = R"GLSL(
 #version 450
 layout(location = 0) in vec2 vUV;
@@ -85,7 +87,7 @@ void main() {
 }
 )GLSL";
 
-// postprocess pass：采样 sceneColor，Reinhard tonemap + 1/2.2 gamma
+// postprocess pass: sample sceneColor, Reinhard tonemap + 1/2.2 gamma
 const char* kPostFrag = R"GLSL(
 #version 450
 layout(location = 0) in vec2 vUV;
@@ -99,7 +101,7 @@ void main() {
 }
 )GLSL";
 
-// CPU 侧复算 shader 数学（double 精度），回读后逐像素比对
+// CPU-side recomputation of the shader math (double precision)
 double shaderMath(double channel) {
     double c = channel / (1.0 + channel);
     return std::pow(c, 1.0 / 2.2);
@@ -113,9 +115,8 @@ int main() {
         vk::raii::Context context;
         vk::ApplicationInfo appInfo("o5m-rhi-verify", 1, "o5m", 1, VK_API_VERSION_1_2);
 
-        // sync validation：走 VK_LAYER_KHRONOS_validation，通过
-        // VK_EXT_validation_features 的 pNext 开启（该扩展无需显式 enable）。
-        // 没装 SDK validation layer 时静默降级为普通运行。
+        // sync validation via VK_LAYER_KHRONOS_validation + VK_EXT_validation_features;
+        // silently degrades to plain run when the layer is not installed
         std::vector<const char*> validationLayers;
         for (const auto& layer : context.enumerateInstanceLayerProperties()) {
             if (std::string_view(layer.layerName) == "VK_LAYER_KHRONOS_validation") {
@@ -159,12 +160,12 @@ int main() {
         std::cout << "[ok] physical device: "
                   << physicalDevice.getProperties().deviceName << "\n";
 
-        // ---- 3. O5MDevice：设备层接管 queue / 复制命令池 / 分配账本 ----
+        // ---- 3. O5MDevice ----
         const uint32_t graphicsFamily = findGraphicsQueueFamily(*physicalDevice);
         float queuePriority = 1.0f;
         vk::DeviceQueueCreateInfo queueInfo({}, graphicsFamily, 1, &queuePriority);
         vk::DeviceCreateInfo deviceInfo;
-        // feature 也要显式开（Vulkan 的 feature 都默认关）
+        // features are opt-in in Vulkan
         vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures(true);
         deviceInfo.setQueueCreateInfos(queueInfo)
                   .setPEnabledExtensionNames(kDeviceExtensions)
@@ -178,34 +179,50 @@ int main() {
         vk::raii::CommandBuffers commandBuffers(
             o5mDevice.getDevice(), { *commandPool, vk::CommandBufferLevel::ePrimary, 1 });
 
-        // ---- 5. 渲染链路 ----
-        //   render(params UBO -> sceneColor) -> postprocess(sceneColor -> finalColor)
-        //   -> readback(finalColor -> HOST_VISIBLE buffer)
+        // ---- 5. render chain via the Phase 1 graph ----
         constexpr uint32_t kSize = 64;
         const vk::Extent2D extent{ kSize, kSize };
         const float kExposure = 2.0f;
 
-        O5MRendergraph graph(o5mDevice);
-        graph.addResource("sceneColor", vk::Format::eR16G16B16A16Sfloat, extent,
-                          vk::ImageUsageFlagBits::eColorAttachment |
-                              vk::ImageUsageFlagBits::eSampled,
-                          vk::ImageLayout::eUndefined,
-                          vk::ImageLayout::eShaderReadOnlyOptimal);
-        graph.addResource("finalColor", vk::Format::eR8G8B8A8Unorm, extent,
-                          vk::ImageUsageFlagBits::eColorAttachment |
-                              vk::ImageUsageFlagBits::eTransferSrc,
-                          vk::ImageLayout::eUndefined,
-                          vk::ImageLayout::eTransferSrcOptimal);
-        graph.addBufferResource("params", 16, vk::BufferUsageFlagBits::eUniformBuffer,
-                                vk::MemoryPropertyFlagBits::eHostVisible |
-                                    vk::MemoryPropertyFlagBits::eHostCoherent);
-        graph.addBufferResource("readback", kSize * kSize * 4,
-                                vk::BufferUsageFlagBits::eTransferDst,
-                                vk::MemoryPropertyFlagBits::eHostVisible |
-                                    vk::MemoryPropertyFlagBits::eHostCoherent);
+        // 5a. graph-declared (created) resources: usage flags are DERIVED at
+        // compile() from the UseDecls below, never hand-written here.
+        std::string sceneColorName = "sceneColor";
+        std::string finalColorName = "finalColor";
+        ResourceInfo sceneColorInfo(sceneColorName, extent,
+                                     vk::Format::eR16G16B16A16Sfloat);
+        ResourceInfo finalColorInfo(finalColorName, extent,
+                                    vk::Format::eR8G8B8A8Unorm);
 
-        // 注意：compile() 之前必须 addPass 完毕——拓扑排序发生在当时的 pass 列表上
-        // shader：直接构造资源（manager 的 create() 还有 bug，绕开），data 内嵌 GLSL
+        // 5b. imported buffers: created outside the graph (we keep the memory
+        // so we can write the UBO / read back the pixels ourselves).
+        // HOST_VISIBLE|HOST_COHERENT: params needs CPU write, readback needs CPU read.
+        auto [paramsBuffer, paramsMemory] = o5mDevice.createBuffer(
+            16, vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+        auto [readbackBuffer, readbackMemory] = o5mDevice.createBuffer(
+            vk::DeviceSize(kSize) * kSize * 4, vk::BufferUsageFlagBits::eTransferDst,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        O5MRendergraph graph(o5mDevice);
+        // imported info objects reuse the same interned handle as the import call
+        std::string paramsName = "params";
+        std::string readbackName = "readback";
+        ResourceInfo paramsInfo(paramsName, vk::DeviceSize(16),
+                                ResourceSource::Imported);
+        ResourceInfo readbackInfo(readbackName,
+                                  vk::DeviceSize(kSize) * kSize * 4,
+                                  ResourceSource::Imported);
+        graph.importBuffer(paramsName, *paramsBuffer, 16,
+                           vk::BufferUsageFlagBits::eUniformBuffer);
+        graph.importBuffer(readbackName, *readbackBuffer,
+                           vk::DeviceSize(kSize) * kSize * 4,
+                           vk::BufferUsageFlagBits::eTransferDst);
+        graph.markOutput(readbackInfo.handle); // root for dead-pass culling
+
+        // 5c. shaders: embedded GLSL, runtime shaderc compile
+        // (direct construction: the manager's create() is still buggy, bypassed)
         O5MShaderResource vsRes("fullscreen.vert", vk::ShaderStageFlagBits::eVertex, o5mDevice);
         O5MShaderResource sceneFsRes("scene.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
         O5MShaderResource postFsRes("post.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
@@ -215,8 +232,8 @@ int main() {
         vsRes.load(); sceneFsRes.load(); postFsRes.load();
         std::cout << "[ok] shaders compiled (GLSL -> SPIR-V via shaderc)\n";
 
-        // descriptor：b0 = UBO(params)，b1 = combined image sampler(sceneColor)
-        // 两个 pipeline 共用同一 layout/set；render 不用 b1、post 不用 b0，合法
+        // 5d. descriptor layout: b0 = UBO(params), b1 = sampler2D(sceneColor)
+        // both pipelines share one layout/set; render ignores b1, post ignores b0
         const std::vector<vk::DescriptorSetLayoutBinding> bindings = {
             { 0, vk::DescriptorType::eUniformBuffer, 1,
               vk::ShaderStageFlagBits::eFragment, nullptr },
@@ -227,12 +244,19 @@ int main() {
         vk::raii::DescriptorSetLayout descLayout(o5mDevice.getDevice(), layoutInfo);
 
         const std::vector<vk::DescriptorPoolSize> poolSizes = {
-            { vk::DescriptorType::eUniformBuffer, 1 },
+            { vk::DescriptorType::eUniformBuffer, 2 },
             { vk::DescriptorType::eCombinedImageSampler, 1 },
         };
-
-        // descSet 先声明后赋值：pass 回调按引用捕获，execute 时取值
-        vk::DescriptorSet descSet;
+        vk::DescriptorPoolCreateInfo poolInfo(
+            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 2, poolSizes);
+        vk::raii::DescriptorPool descPool(o5mDevice.getDevice(), poolInfo);
+        std::vector<vk::DescriptorSetLayout> setLayouts{ *descLayout, *descLayout };
+        vk::DescriptorSetAllocateInfo allocInfo(*descPool, setLayouts);
+        vk::raii::DescriptorSets descSets(o5mDevice.getDevice(), allocInfo);
+        // one set per pipeline: updating a set that an earlier pass already
+        // bound would invalidate the command buffer
+        vk::DescriptorSet renderDescSet = descSets[0];
+        vk::DescriptorSet postDescSet = descSets[1];
 
         vk::SamplerCreateInfo samplerInfo;
         samplerInfo.setMagFilter(vk::Filter::eLinear)
@@ -244,8 +268,7 @@ int main() {
             .setMinLod(0.f).setMaxLod(0.f);
         vk::raii::Sampler sampler(o5mDevice.getDevice(), samplerInfo);
 
-
-        // 两个 pipeline：render -> RGBA16F，postprocess -> RGBA8
+        // 5e. pipelines: render -> RGBA16F, postprocess -> RGBA8
         O5MPipeline renderPipeline(o5mDevice);
         renderPipeline.createPipeline({ vk::Format::eR16G16B16A16Sfloat },
                                       vsRes.getShaderModule(), sceneFsRes.getShaderModule(),
@@ -256,63 +279,83 @@ int main() {
                                     "main", "main", *descLayout);
         std::cout << "[ok] pipelines created\n";
 
-        graph.addPass("render", { "params" }, { "sceneColor" },
-            [&](vk::raii::CommandBuffer& cmd) {
-                renderPipeline.begin(cmd, { *graph.getResource("sceneColor")->imageView }, extent);
-                renderPipeline.bindDescriptorSet(cmd, descSet);
+        // 5f. passes: setup declares reads/writes, execute records commands.
+        // The graph derives ordering + barriers from the declarations.
+        graph.addGraphicPass("render",
+            [&](O5MPassBuilder& b) {
+                b.read(paramsInfo, BufRead::Uniform);
+                b.write(sceneColorInfo, TexWrite::ColorStore);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                renderPipeline.begin(cmd, { ctx.getImageView(sceneColorInfo.handle) }, extent);
+                renderPipeline.bindDescriptorSet(cmd, renderDescSet);
                 cmd.draw(3, 1, 0, 0);
                 renderPipeline.end(cmd);
             });
 
-        graph.addPass("postprocess", { "sceneColor" }, { "finalColor" },
-            [&](vk::raii::CommandBuffer& cmd) {
-                postPipeline.begin(cmd, { *graph.getResource("finalColor")->imageView }, extent);
-                postPipeline.bindDescriptorSet(cmd, descSet);
+        graph.addGraphicPass("postprocess",
+            [&](O5MPassBuilder& b) {
+                b.read(sceneColorInfo, TexRead::Sampled);
+                b.write(finalColorInfo, TexWrite::ColorStore);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                // the sampled view only exists after compile(), so the
+                // descriptor write happens at record time via the context;
+                // it targets a set no earlier pass has bound yet
+                vk::DescriptorBufferInfo uboInfo(*paramsBuffer, 0, 16);
+                vk::DescriptorImageInfo sceneInfo(
+                    *sampler, ctx.getImageView(sceneColorInfo.handle),
+                    vk::ImageLayout::eShaderReadOnlyOptimal);
+                vk::WriteDescriptorSet writes[] = {
+                    { postDescSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {} },
+                    { postDescSet, 1, 0, vk::DescriptorType::eCombinedImageSampler, sceneInfo, {}, {} },
+                };
+                o5mDevice.getDevice().updateDescriptorSets(writes, {});
+
+                postPipeline.begin(cmd, { ctx.getImageView(finalColorInfo.handle) }, extent);
+                postPipeline.bindDescriptorSet(cmd, postDescSet);
                 cmd.draw(3, 1, 0, 0);
                 postPipeline.end(cmd);
             });
 
-        graph.addPass("readback", { "finalColor" }, { "readback" },
-            [&](vk::raii::CommandBuffer& cmd) {
+        graph.addGraphicPass("readback",
+            [&](O5MPassBuilder& b) {
+                b.read(finalColorInfo, TexRead::TransferSrc);
+                b.write(readbackInfo, BufWrite::TransferDst);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
                 vk::BufferImageCopy region(
                     0, 0, 0,
                     { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
                     { 0, 0, 0 }, { kSize, kSize, 1 });
-                cmd.copyImageToBuffer(*graph.getResource("finalColor")->image,
+                // layout is guaranteed eTransferSrcOptimal by the compiled barrier
+                cmd.copyImageToBuffer(ctx.getImage(finalColorInfo.handle),
                                       vk::ImageLayout::eTransferSrcOptimal,
-                                      *graph.getResource("readback")->buffer, region);
+                                      ctx.getBuffer(readbackInfo.handle), region);
             });
 
         graph.compile();
+        graph.dump();
         std::cout << "[ok] graph compiled\n";
 
-        // UBO 内容：host 写入（map/memcpy/unmap）——graph 只管分配和同步，内容归使用方
+        // 5g. UBO content: host write into OUR memory (graph only tracks sync)
         {
             float params[4] = { kExposure, 0.f, 0.f, 0.f };
-            void* mapped = graph.getResource("params")->memory.mapMemory(0, vk::WholeSize);
+            void* mapped = paramsMemory.mapMemory(0, vk::WholeSize);
             std::memcpy(mapped, params, sizeof(params));
-            graph.getResource("params")->memory.unmapMemory();
+            paramsMemory.unmapMemory();
         }
 
-        // descriptor set 现在才能填：write 引用的 imageView/buffer 在 compile() 才分配
-        vk::DescriptorPoolCreateInfo poolInfoFull(
-            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, poolSizes);
-        vk::raii::DescriptorPool descPool(o5mDevice.getDevice(), poolInfoFull);
-        vk::DescriptorSetAllocateInfo allocInfo(*descPool, { *descLayout });
-        vk::raii::DescriptorSets descSets(o5mDevice.getDevice(), allocInfo);
-        descSet = descSets.front();
+        // render set's UBO binding is known before execute; write it up front
+        {
+            vk::DescriptorBufferInfo uboInfo(*paramsBuffer, 0, 16);
+            vk::WriteDescriptorSet write {
+                renderDescSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {}
+            };
+            o5mDevice.getDevice().updateDescriptorSets(write, {});
+        }
 
-        vk::DescriptorBufferInfo uboInfo(*graph.getResource("params")->buffer, 0, 16);
-        vk::DescriptorImageInfo sceneInfo(
-            *sampler, *graph.getResource("sceneColor")->imageView,
-            vk::ImageLayout::eShaderReadOnlyOptimal);
-        vk::WriteDescriptorSet writes[] = {
-            { descSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {} },
-            { descSet, 1, 0, vk::DescriptorType::eCombinedImageSampler, sceneInfo, {}, {} },
-        };
-        o5mDevice.getDevice().updateDescriptorSets(writes, {});
-
-        // ---- 6. 执行（fence 同步）并校验 ----
+        // ---- 6. execute (fence sync) + verify ----
         vk::raii::Fence fence(o5mDevice.getDevice(), vk::FenceCreateInfo());
         graph.execute(commandBuffers[0], *o5mDevice.getQueue(), &fence);
         if (o5mDevice.getDevice().waitForFences(*fence, true, UINT64_MAX) !=
@@ -321,11 +364,11 @@ int main() {
         }
         std::cout << "[ok] submitted + fence waited\n";
 
-        // CPU 逐像素校验：期望值 = 同一套数学（uv*exposure -> Reinhard -> gamma）
-        // 注意不翻转 v：Vulkan NDC 是 Y 朝下的（(-1,-1)=视口左上，与 OpenGL 相反），
-        // fullscreen triangle 的 vUV 插值结果就是 (x+0.5)/W, (y+0.5)/H
+        // CPU per-pixel check. No v-flip: Vulkan NDC is Y-down
+        // ((-1,-1) = viewport top-left), the fullscreen triangle's vUV
+        // interpolates to (x+0.5)/W, (y+0.5)/H directly.
         const uint8_t* pixels = static_cast<const uint8_t*>(
-            graph.getResource("readback")->memory.mapMemory(0, vk::WholeSize));
+            readbackMemory.mapMemory(0, vk::WholeSize));
         struct Probe { uint32_t x, y; };
         const Probe probes[] = { { 32, 32 }, { 10, 20 }, { 40, 50 }, { 5, 5 } };
         bool ok = true;
@@ -350,13 +393,13 @@ int main() {
                 ok = false;
             }
         }
-        graph.getResource("readback")->memory.unmapMemory();
+        readbackMemory.unmapMemory();
 
         if (!ok) {
             return 1;
         }
         std::cout << "[ok] " << std::size(probes) << " pixels verified (UBO + tonemap math)\n";
-        std::cout << "[PASS] rhi_verify: render -> postprocess -> readback 链路 OK\n";
+        std::cout << "[PASS] rhi_verify: render -> postprocess -> readback via Phase 1 graph\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "[FAIL] " << e.what() << "\n";

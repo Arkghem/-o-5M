@@ -16,7 +16,7 @@ public:
     O5MPassBuilder(O5MRendergraph* graph, PassDesc& passDesc) : 
         m_graph(graph),
         m_passDesc(passDesc) {}
-    ~O5MPassBuilder(void);
+    ~O5MPassBuilder(void) = default;
 
     //shit code here, alil' fuction push this info into rendergraph
     void addResource(ResourceInfo&);

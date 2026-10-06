@@ -18,9 +18,10 @@ private:
 
     PhysicalResource& get(uint32_t handle) const {
         for (auto [h, res] : physicalResources) {
-            if (h == handle) 
+            if (h == handle)
                 return res;
         }
+        throw std::runtime_error("RenderContext: unknown resource handle");
     }
 public:
     O5MRenderContext(const PassDesc& pass, std::unordered_map<ResourceHandle, PhysicalResource>& ref, int frameIndex = INT_MAX) :

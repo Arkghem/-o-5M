@@ -66,8 +66,8 @@ namespace O5MRendergraphNS {
         }
 
         vk::ImageView getView(void) {
-            source == ResourceSource::Imported 
-                ? std::get<ImportedResource>(resource).view 
+            return source == ResourceSource::Imported
+                ? std::get<ImportedResource>(resource).view
                 : std::get<OwnedResource>(resource).view;
         }
 

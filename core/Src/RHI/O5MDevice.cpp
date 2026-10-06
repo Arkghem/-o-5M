@@ -125,7 +125,7 @@ vk::raii::ImageView O5MDevice::createImageView2D(
     vk::Format format,
     vk::ImageAspectFlags aspectFlags
 ) {
-    if (aspectFlags & vk::ImageAspectFlagBits::eNone) {
+    if (!aspectFlags) {
           aspectFlags = aspectFromFormat(format);
     }
 
