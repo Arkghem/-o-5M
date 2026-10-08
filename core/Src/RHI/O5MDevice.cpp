@@ -2,6 +2,7 @@
 
 #include "RHI/O5MDevice.h"
 
+#include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
@@ -26,7 +27,8 @@ static vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
 O5MDevice::O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,
                      uint32_t queueFamilyIndex)
     : m_physicalDevice(std::move(physicalDevice)),
-      m_device(std::move(device)) {
+      m_device(std::move(device)),
+      m_queueFamilyIndex(queueFamilyIndex) {
     m_memoryProperties = m_physicalDevice.getMemoryProperties();
     m_maxAllocationCount = m_physicalDevice.getProperties().limits.maxMemoryAllocationCount;
 
@@ -258,4 +260,86 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
 
     m_queue.submit(submitInfo);
     m_queue.waitIdle();
+}
+
+O5MDevice::SwapchainBundle O5MDevice::createSwapchain(
+    const vk::raii::SurfaceKHR& surface,
+    vk::Extent2D requestedExtent
+) {
+    // present support is a hard requirement for the single-queue design
+    // (raii variant throws on failure and returns Bool32 directly)
+    if (m_physicalDevice.getSurfaceSupportKHR(m_queueFamilyIndex, *surface) != VK_TRUE)
+        throw std::runtime_error("graphics queue family does not support present");
+
+    const auto capabilities = m_physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+
+    // format: prefer B8G8R8A8_SRGB (any colorspace), else first available
+    const auto formats = m_physicalDevice.getSurfaceFormatsKHR(*surface);
+    if (formats.empty())
+        throw std::runtime_error("surface has no supported formats");
+    vk::SurfaceFormatKHR chosenFormat = formats.front();
+    for (const auto& f : formats) {
+        if (f.format == vk::Format::eB8G8R8A8Srgb) {
+            chosenFormat = f;
+            break;
+        }
+    }
+
+    // present mode: FIFO always supported; prefer it (VSync, no tearing)
+    vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
+
+    // extent: clamp the requested size into [min, max]
+    vk::Extent2D extent = requestedExtent;
+    if (capabilities.currentExtent.width != UINT32_MAX) {
+        extent = capabilities.currentExtent;
+    } else {
+        extent.width = std::clamp(extent.width,
+            capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(extent.height,
+            capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    }
+
+    // image count: one more than the minimum for decent overlap
+    uint32_t imageCount = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount)
+        imageCount = capabilities.maxImageCount;
+
+    vk::SwapchainCreateInfoKHR info;
+    info.setSurface(*surface)
+        .setMinImageCount(imageCount)
+        .setImageFormat(chosenFormat.format)
+        .setImageColorSpace(chosenFormat.colorSpace)
+        .setImageExtent(extent)
+        .setImageArrayLayers(1)
+        .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
+        .setImageSharingMode(vk::SharingMode::eExclusive)
+        .setPreTransform(capabilities.currentTransform)
+        .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
+        .setPresentMode(presentMode)
+        .setClipped(VK_TRUE);
+
+    SwapchainBundle bundle;
+    bundle.swapchain = vk::raii::SwapchainKHR(m_device, info);
+    bundle.format = chosenFormat.format;
+    bundle.extent = extent;
+    bundle.images = bundle.swapchain.getImages();
+    bundle.imageCount = static_cast<uint32_t>(bundle.images.size());
+
+    for (vk::Image image : bundle.images) {
+        vk::ImageViewCreateInfo viewInfo {
+            .image = image,
+            .viewType = vk::ImageViewType::e2D,
+            .format = bundle.format,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+        bundle.views.emplace_back(m_device, viewInfo);
+    }
+
+    return bundle;
 }

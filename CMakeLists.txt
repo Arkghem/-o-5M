@@ -60,6 +60,12 @@ endif()
 add_subdirectory(core)
 
 # ---------------------------------------------------------------------------
+# Viewer（Phase 2 起的主程序：窗口 + 实时帧循环）
+# ---------------------------------------------------------------------------
+add_executable(o5m_viewer apps/o5m_viewer.cpp)
+target_link_libraries(o5m_viewer PRIVATE o5m_core)
+
+# ---------------------------------------------------------------------------
 # RHI Verification Executable（离屏回归测试，永久保留）
 # ---------------------------------------------------------------------------
 add_executable(rhi_verify apps/rhi_verify.cpp)

@@ -393,8 +393,10 @@ void O5MRendergraph::compile(void) {
     for (uint32_t round = 0; round < 2; ++round) {
         for (auto passIdx : m_executionOrder) {
             auto& pass = m_passDescs[passIdx];
-            auto& plan = round == 0 ? pass.compiled.firstFrameBarrier
-                                    : pass.compiled.steadyBarrier;
+            auto& enterPlan = round == 0 ? pass.compiled.firstFrameBarrier
+                                         : pass.compiled.steadyBarrier;
+            auto& exitPlan = round == 0 ? pass.compiled.firstFrameExitBarrier
+                                        : pass.compiled.steadyExitBarrier;
 
             auto bakeBarriers = [&](const std::vector<UseDecl>& uses, bool historySide) {
                 for (const auto& use : uses) {
@@ -404,9 +406,21 @@ void O5MRendergraph::compile(void) {
                     SyncScope& state = m_stateRecords[use.handle][instance];
                     SyncScope next = fromUseToSyncScope(pass.kind, use.use);
 
-                    plan.push_back(BarrierState{ use.handle, state, next, historySide });
-
+                    enterPlan.push_back(BarrierState{ use.handle, state, next, historySide });
                     state = next;
+
+                    // Present: after the pass body, hand the image back to
+                    // the presentation engine (color attachment -> present)
+                    if (std::holds_alternative<TexWrite>(use.use) &&
+                        std::get<TexWrite>(use.use) == TexWrite::Present) {
+                        SyncScope presentScope{
+                            .stages = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            .access = vk::AccessFlagBits::eColorAttachmentWrite,
+                            .layout = vk::ImageLayout::ePresentSrcKHR
+                        };
+                        exitPlan.push_back(BarrierState{ use.handle, state, presentScope, historySide });
+                        state = presentScope;
+                    }
                 }
             };
 
@@ -421,14 +435,18 @@ void O5MRendergraph::compile(void) {
 }
 
 void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
-                             vk::raii::Fence* fence, uint32_t frameIndex) {
+                             vk::raii::Fence* fence, uint32_t frameIndex,
+                             vk::raii::Semaphore* waitSemaphore,
+                             vk::raii::Semaphore* signalSemaphore) {
     commandBuffer.begin({});
 
     for (auto passIdx : m_executionOrder) {
         const auto& pass = m_passDescs[passIdx];
         // replay: frame 0 = cold-start plan, later frames = steady plan
-        const auto& plan = frameIndex == 0 ? pass.compiled.firstFrameBarrier
-                                           : pass.compiled.steadyBarrier;
+        const auto& enterPlan = frameIndex == 0 ? pass.compiled.firstFrameBarrier
+                                                : pass.compiled.steadyBarrier;
+        const auto& exitPlan = frameIndex == 0 ? pass.compiled.firstFrameExitBarrier
+                                               : pass.compiled.steadyExitBarrier;
 
         auto emitBarrier = [&](const BarrierState barrierState) {
             PhysicalResource& resource = m_physicalResources[barrierState.handle];
@@ -473,9 +491,10 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
             }
         };
 
-        std::for_each(plan.begin(), plan.end(), emitBarrier);
+        std::for_each(enterPlan.begin(), enterPlan.end(), emitBarrier);
         O5MRenderContext ctx(pass, m_physicalResources, static_cast<int>(frameIndex));
         pass.executeFunc(ctx, commandBuffer);
+        std::for_each(exitPlan.begin(), exitPlan.end(), emitBarrier);
     }
 
     commandBuffer.end();
@@ -483,7 +502,21 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
     vk::SubmitInfo submitInfo;
     submitInfo.setCommandBuffers(*commandBuffer);
 
-    //TODO Fence wait modification for cpu side
+    // frame-level sync handed over by the caller (see phase 2 doc §1):
+    // waitSemaphore = acquire's imageAvailable; signalSemaphore = present's
+    // renderFinished. The graph itself does not understand present.
+    // NOTE: SubmitInfo only stores the POINTER for waitDstStageMask, and
+    // ArrayProxyNoTemporaries refuses rvalues -- the stage mask must live
+    // until queue.submit() below, hence the function-static lvalue.
+    static const vk::PipelineStageFlags kPresentWaitStage =
+        vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    if (waitSemaphore) {
+        submitInfo.setWaitSemaphores(**waitSemaphore);
+        submitInfo.setWaitDstStageMask(kPresentWaitStage);
+    }
+    if (signalSemaphore)
+        submitInfo.setSignalSemaphores(**signalSemaphore);
+
     queue.submit(submitInfo, fence ? **fence : vk::Fence{ nullptr });
 }
 
@@ -618,6 +651,8 @@ void O5MRendergraph::dump(void) const {
         };
         printBarriers("first:", pass.compiled.firstFrameBarrier);
         printBarriers("steady", pass.compiled.steadyBarrier);
+        printBarriers("firstX:", pass.compiled.firstFrameExitBarrier);
+        printBarriers("steadyX", pass.compiled.steadyExitBarrier);
     }
 
     // 2) resource lifecycle table.

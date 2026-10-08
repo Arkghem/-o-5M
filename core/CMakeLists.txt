@@ -38,6 +38,21 @@ target_link_libraries(o5m_core PRIVATE tinygltf)
 # 公共头不暴露 stb 类型，所以 PRIVATE。
 target_link_libraries(o5m_core PRIVATE stb)
 
+# GLFW — only Src/Platform/O5MWindow.cpp includes <GLFW/glfw3.h>; the public
+# header keeps GLFW types opaque (forward declaration), so PRIVATE.
+find_package(glfw3 QUIET)
+if(NOT glfw3_FOUND)
+    find_package(glfw QUIET)
+endif()
+if(NOT glfw3_FOUND AND NOT glfw_FOUND)
+    message(FATAL_ERROR "GLFW3 not found (brew install glfw / vcpkg install glfw3)")
+endif()
+if(glfw3_FOUND)
+    target_link_libraries(o5m_core PRIVATE glfw)
+else()
+    target_link_libraries(o5m_core PRIVATE glfw)
+endif()
+
 # Vulkan — O5MTextureResource.h stores a vk::Image handle in a public header,
 # so the Vulkan loader is a PUBLIC dependency: any consumer of core/Inc must
 # also resolve <vulkan/vulkan.hpp> and link libvulkan.

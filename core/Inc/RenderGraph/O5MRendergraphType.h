@@ -18,7 +18,9 @@ class O5MPassBuilder;
 
 namespace O5MRendergraphNS {
     enum class TexRead  { Sampled, Storage, TransferSrc};
-    enum class TexWrite { ColorClear, ColorStore, Depth, Storage, TransferDst }; //mind the difference with Color
+    // Present: render into the attachment, then LEAVE it in ePresentSrcKHR
+    // after the pass (swapchain backbuffer output; generates an exit barrier)
+    enum class TexWrite { ColorClear, ColorStore, Depth, Storage, TransferDst, Present }; //mind the difference with Color
     enum class TexRW    { Storage }; //Host or Device
     enum class BufRead  { Uniform, Storage, VertexIndex, Indirect, TransferSrc };
     enum class BufWrite { Storage, TransferDst, Uniform };
@@ -204,6 +206,10 @@ namespace O5MRendergraphNS {
                     case TexWrite::Depth: return { vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests, vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::ImageLayout::eDepthStencilAttachmentOptimal };
                     case TexWrite::Storage: return { vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eVertexShader, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral };
                     case TexWrite::TransferDst: return { vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eTransferDstOptimal };
+                    // during the pass it is a normal color attachment; the
+                    // transition to ePresentSrcKHR is an EXIT barrier added
+                    // by compile() after the pass
+                    case TexWrite::Present: return { vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite, vk::ImageLayout::eColorAttachmentOptimal };
                     }
                 } else if constexpr (std::is_same_v<T, TexRW>) {
                     switch (arg) {
@@ -298,6 +304,7 @@ namespace O5MRendergraphNS {
                 case TexWrite::Depth: return vk::ImageUsageFlagBits::eDepthStencilAttachment;
                 case TexWrite::Storage: return vk::ImageUsageFlagBits::eStorage;
                 case TexWrite::TransferDst: return vk::ImageUsageFlagBits::eTransferDst;
+                case TexWrite::Present: return vk::ImageUsageFlagBits::eColorAttachment;
                 }
             } else {
                 return vk::ImageUsageFlagBits::eStorage;
@@ -347,6 +354,10 @@ namespace O5MRendergraphNS {
             // steadyBarrier for every later frame; steady state repeats.
             std::vector<BarrierState> firstFrameBarrier;
             std::vector<BarrierState> steadyBarrier;
+            // barriers emitted AFTER the pass body (currently only Present:
+            // color attachment -> ePresentSrcKHR)
+            std::vector<BarrierState> firstFrameExitBarrier;
+            std::vector<BarrierState> steadyExitBarrier;
         } compiled; //this will be filled after "compile"
 
         const std::string debugName;

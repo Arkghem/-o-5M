@@ -102,8 +102,13 @@ public:
     void compile(void);
     // frameIndex: which frame this submit is. 0 replays the cold-start plan,
     // >= 1 replays the steady-state plan; parity picks ping-pong instances.
+    // waitSemaphore (acquire's imageAvailable) / signalSemaphore (present's
+    // renderFinished) are forwarded to the submit -- optional, offscreen
+    // callers (rhi_verify & co) leave them null.
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
-                 vk::raii::Fence* fence = nullptr, uint32_t frameIndex = 0);
+                 vk::raii::Fence* fence = nullptr, uint32_t frameIndex = 0,
+                 vk::raii::Semaphore* waitSemaphore = nullptr,
+                 vk::raii::Semaphore* signalSemaphore = nullptr);
 
     //debug only: print out the compile result
     void dump(void) const;
