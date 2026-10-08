@@ -31,13 +31,10 @@ FetchContent_MakeAvailable(tinygltf)
 # ---------------------------------------------------------------------------
 # System / Package Dependencies
 # ---------------------------------------------------------------------------
-# OpenGL is provided by the system graphics driver.
-find_package(OpenGL REQUIRED)
-
 # Vulkan 与 shaderc 由 core/CMakeLists.txt 自行查找（本引擎单 Vulkan 后端，
 # 不存在"可选后端"开关；旧的 O5M_VULKAN option 是死代码，已删除）。
 
-# GLFW3 — window and input management. Install via vcpkg or system package.
+# GLFW3 — window and input management (Phase 2 实时帧循环依赖).
 #   vcpkg: ./vcpkg install glfw3
 #   Homebrew (macOS): brew install glfw
 #   apt (Linux): sudo apt install libglfw3-dev
@@ -57,25 +54,10 @@ endif()
 # ---------------------------------------------------------------------------
 # Core Library
 # ---------------------------------------------------------------------------
-# Added AFTER dependency discovery (OpenGL/Vulkan/glfw3/shaderc) so that the
-# imported targets they create (Vulkan::Vulkan, shaderc::shaderc_combined,
-# OpenGL::GL) are visible to the RHI backends defined in core/.
+# Added AFTER dependency discovery (Vulkan/glfw3/shaderc) so that the
+# imported targets they create (Vulkan::Vulkan, shaderc::shaderc_combined)
+# are visible to the RHI backends defined in core/.
 add_subdirectory(core)
-
-# ---------------------------------------------------------------------------
-# Legacy OpenGL Executable（Phase 2 实时渲染目标验收后退役删除）
-# ---------------------------------------------------------------------------
-add_executable(o5m apps/legacy_gl.cpp)
-
-# Link vendored glad (OpenGL loader) and system OpenGL.
-target_link_libraries(o5m PRIVATE glad OpenGL::GL)
-
-# Link GLFW (handle both find_package naming variants).
-if(glfw3_FOUND)
-    target_link_libraries(o5m PRIVATE glfw)
-else()
-    target_link_libraries(o5m PRIVATE glfw)
-endif()
 
 # ---------------------------------------------------------------------------
 # RHI Verification Executable（离屏回归测试，永久保留）
@@ -108,18 +90,3 @@ add_test(NAME resmgr_cycle COMMAND resmgr_cycle_test)
 add_executable(rendergraph_tests test/rendergraph_tests.cpp)
 target_link_libraries(rendergraph_tests PRIVATE o5m_core)
 add_test(NAME rendergraph COMMAND rendergraph_tests)
-
-# ---------------------------------------------------------------------------
-# Platform-Specific Settings
-# ---------------------------------------------------------------------------
-if(APPLE)
-    # macOS requires the OpenGL framework linkage (handled by FindOpenGL).
-    # No extra flags needed — FindOpenGL sets up the framework path.
-elseif(WIN32)
-    # Windows: ensure we link against opengl32.
-    # Handled by FindOpenGL::GL.
-elseif(UNIX)
-    # Linux: link against libGL and libdl (dlopen for GLAD runtime loading).
-    find_package(Threads REQUIRED)
-    target_link_libraries(o5m PRIVATE Threads::Threads)
-endif()

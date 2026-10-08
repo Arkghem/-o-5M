@@ -39,7 +39,7 @@
 ```text
 +---------------------------------------------------+
 |  main/                                            |
-|    o5m          -- 主程序（窗口 / 主循环）          |
+|    o5m_viewer   -- 主程序（窗口 / 主循环，P2 起）     |
 |    rhi_verify   -- 无窗口离屏验证程序               |
 +---------------------------------------------------+
 |  core/                                            |
@@ -51,7 +51,7 @@
 |    O5MEntity/...     -- ECS 场景组织               |
 |    O5MCullingSystem  -- 视锥剔除                   |
 +---------------------------------------------------+
-|  third_party/  glad / stb                          |
+|  third_party/  stb                                 |
 |  FetchContent   tinygltf    |  system: glm glfw    |
 |  Vulkan SDK    vulkan + shaderc                    |
 +---------------------------------------------------+
@@ -108,7 +108,6 @@ cmake --build build
 | glm | 数学库 | 系统包 |
 | GLFW | 窗口与输入 | 系统包 |
 | stb | 纹理加载 | vendored |
-| glad | OpenGL loader（历史遗留） | vendored |
 
 ## License
 
