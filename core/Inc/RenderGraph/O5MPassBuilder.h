@@ -37,6 +37,7 @@ public:
 
     void readHistory(ResourceInfo& info, std::variant<TexRead, TexWrite, TexRW, BufRead, BufWrite> use
     ) {
+        info.hasHistory = true;
         m_passDesc.readHistorys.emplace_back(info, use);
         addResource(info);
     }

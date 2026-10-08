@@ -449,8 +449,8 @@ ResourceHandle O5MRendergraph::importTexture(
         .kind = ResourceKind::Image,
         .source = ResourceSource::Imported,
         .resource = PhysicalResource::ImportedResource {
-            .image = image,
-            .view = view
+            .image = { image, nullptr },
+            .view = { view, nullptr }
         }
     };
 
@@ -473,7 +473,7 @@ ResourceHandle O5MRendergraph::importBuffer(
         .kind = ResourceKind::Buffer,
         .source = ResourceSource::Imported,
         .resource = PhysicalResource::ImportedResource {
-            .buffer = buffer
+            .buffer = { buffer, nullptr }
         }
     };
 
@@ -511,6 +511,7 @@ void O5MRendergraph::compile(void) {
                 rootPasses.push_back(passIdx);
             }
         }
+        //readHistory member won't be included
         for (const auto& read : pass.reads) {
             resourceReaders[read.handle].push_back(passIdx);
         }
@@ -570,6 +571,7 @@ void O5MRendergraph::compile(void) {
         }
     }*/
 
+    //TODO: WAW support needed here. single-writer restriction will be deprecated in phase 3.
     //Kahn sort
     m_executionOrder.clear();
 
@@ -711,42 +713,74 @@ void O5MRendergraph::compile(void) {
         }
     }
     
+    // history ping-pong: any resource with a readHistory declaration gets a
+    // second physical instance. Imported resources cannot be duplicated
+    // (the graph does not own them), so history on imports is rejected here.
+    for (const auto& pass : m_passDescs) {
+        for (const auto& h : pass.readHistorys) {
+            auto& info = m_resourceInfos.at(h.handle);
+            if (info.source == ResourceSource::Imported)
+                throw std::runtime_error(
+                    "readHistory on imported resource is not supported: " + info.debugName);
+            info.hasHistory = true;
+        }
+    }
+
     //initalize physical resources (created resources only; imported ones
     //already have their physical entry from importTexture/importBuffer)
     for (const auto& [handle, resourceInfo] : m_resourceInfos) {
         if (resourceInfo.source == ResourceSource::Imported)
             continue;
 
-        ResourceKind kind = resourceInfo.kind;
         PhysicalResource physicalResource;
-        physicalResource.kind = kind;
+        physicalResource.hasHistory = resourceInfo.hasHistory;
+        physicalResource.kind = resourceInfo.kind;
         physicalResource.source = ResourceSource::Created;
         physicalResource.resource = PhysicalResource::OwnedResource();
         auto& owned = std::get<PhysicalResource::OwnedResource>(physicalResource.resource);
-        switch (kind) {
-            case ResourceKind::Buffer: 
-                std::tie(owned.buffer, owned.memory) =
-                    m_device.createBuffer(std::get<BufferInfo>(resourceInfo.info).size,
-                        std::get<BufferInfo>(resourceInfo.info).usage,
-                        vk::MemoryPropertyFlagBits::eDeviceLocal);
-                break;
-            case ResourceKind::Image:
-                std::tie(owned.image, owned.memory) =
-                    m_device.createImage2D(std::get<ImageInfo>(resourceInfo.info).format,
-                        std::get<ImageInfo>(resourceInfo.info).extent, 1,
-                        vk::ImageTiling::eOptimal, std::get<ImageInfo>(resourceInfo.info).usage,
-                        vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-                //createImageView
-                owned.view = m_device.createImageView2D(owned.image,
-                       std::get<ImageInfo>(resourceInfo.info).format);
-                break;
+        // hasHistory -> create TWO instances (ping-pong), else one
+        const uint32_t instanceCount = resourceInfo.hasHistory ? 2 : 1;
+        for (uint32_t inst = 0; inst < instanceCount; ++inst) {
+            switch (resourceInfo.kind) {
+                case ResourceKind::Buffer:
+                    std::tie(owned.buffer[inst], owned.memory[inst]) =
+                        m_device.createBuffer(std::get<BufferInfo>(resourceInfo.info).size,
+                            std::get<BufferInfo>(resourceInfo.info).usage,
+                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+                    break;
+                case ResourceKind::Image:
+                    std::tie(owned.image[inst], owned.memory[inst]) =
+                        m_device.createImage2D(std::get<ImageInfo>(resourceInfo.info).format,
+                            std::get<ImageInfo>(resourceInfo.info).extent, 1,
+                            vk::ImageTiling::eOptimal, std::get<ImageInfo>(resourceInfo.info).usage,
+                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+                    //createImageView
+                    owned.view[inst] = m_device.createImageView2D(owned.image[inst],
+                           std::get<ImageInfo>(resourceInfo.info).format);
+                    break;
+            }
         }
         m_physicalResources.emplace(handle, std::move(physicalResource));
     }
 
-    //barrier configuration
-    std::unordered_map<ResourceHandle, SyncScope> stateRecords;
+    //barrier configuration: TWO-ROUND SIMULATION.
+    //
+    // History reads must be barriered against "the state the previous frame
+    // left that ping-pong instance in" -- a cross-frame dependency that does
+    // not exist at compile time. But the frame timeline is periodic: after a
+    // cold start, every frame repeats the same per-instance state cycle. So
+    // we simulate the schedule twice and bake two plans:
+    //   round 0: starts from the initial states (eUndefined / imported layout)
+    //            -> firstFrameBarrier, replayed for frameIndex == 0
+    //   round 1: continues from round 0's end states
+    //            -> steadyBarrier, replayed for every frameIndex >= 1
+    // Instance selection inside a round r: regular uses touch instance r%2,
+    // history reads touch instance (r+1)%2 (the one the "previous" round
+    // produced). Non-history resources only have slot 0, so both rounds and
+    // both parities resolve to the same instance.
+    m_stateRecords.clear();
     for (auto& [handle, info] : m_resourceInfos) {
         // only images have a layout; buffers start with no layout state.
         // eTopOfPipe: old-style pipelineBarrier requires a non-zero srcStageMask.
@@ -754,52 +788,65 @@ void O5MRendergraph::compile(void) {
             info.kind == ResourceKind::Image
                 ? std::get<ImageInfo>(info.info).initalLayout
                 : vk::ImageLayout::eUndefined;
-        stateRecords[handle] = SyncScope{
+        m_stateRecords[handle].fill(SyncScope{
             .stages = vk::PipelineStageFlagBits::eTopOfPipe,
             .access = vk::AccessFlagBits::eNone,
             .layout = initialLayout
-        };
+        });
     }
 
-    for (auto passIdx : m_executionOrder) {
-        auto& pass = m_passDescs[passIdx];
+    for (uint32_t round = 0; round < 2; ++round) {
+        for (auto passIdx : m_executionOrder) {
+            auto& pass = m_passDescs[passIdx];
+            auto& plan = round == 0 ? pass.compiled.firstFrameBarrier
+                                    : pass.compiled.steadyBarrier;
 
-        auto barrierConstrution = [&](const UseDecl& use) {
-            SyncScope lastState = stateRecords[use.handle]; 
-            SyncScope currentState = fromUseToSyncScope(pass.kind, use.use);
+            auto bakeBarriers = [&](const std::vector<UseDecl>& uses, bool historySide) {
+                for (const auto& use : uses) {
+                    const uint32_t instance =
+                        m_physicalResources.at(use.handle).slot(
+                            historySide ? (round + 1) % 2 : round % 2);
+                    SyncScope& state = m_stateRecords[use.handle][instance];
+                    SyncScope next = fromUseToSyncScope(pass.kind, use.use);
 
-            pass.compiled.enterBarrier.emplace_back(use.handle, lastState, currentState);
+                    plan.push_back(BarrierState{ use.handle, state, next, historySide });
 
-            stateRecords[use.handle] = currentState;
-        };
+                    state = next;
+                }
+            };
 
-        auto constructBarrier = [&] (const UseDecl& use) {
-            SyncScope lastState, currentState;
-        };
-
-        std::for_each(pass.reads.begin(), pass.reads.end(), barrierConstrution);
-        std::for_each(pass.writes.begin(), pass.writes.end(), barrierConstrution);
-        std::for_each(pass.readWrites.begin(), pass.readWrites.end(), barrierConstrution);
-
-        //wondering what we should do with aspect&queue
+            bakeBarriers(pass.reads, false);
+            bakeBarriers(pass.writes, false);
+            bakeBarriers(pass.readWrites, false);
+            // history reads do not join the frame-internal dependency graph,
+            // but they still need barriers on the OTHER instance
+            bakeBarriers(pass.readHistorys, true);
+        }
     }
 }
 
-void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue, vk::raii::Fence* fence) {
-    std::vector<vk::raii::CommandBuffer> commandBuffers;
+void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
+                             vk::raii::Fence* fence, uint32_t frameIndex) {
     commandBuffer.begin({});
 
     for (auto passIdx : m_executionOrder) {
         const auto& pass = m_passDescs[passIdx];
+        // replay: frame 0 = cold-start plan, later frames = steady plan
+        const auto& plan = frameIndex == 0 ? pass.compiled.firstFrameBarrier
+                                           : pass.compiled.steadyBarrier;
 
         auto emitBarrier = [&](const BarrierState barrierState) {
             PhysicalResource& resource = m_physicalResources[barrierState.handle];
+            // history-side barriers act on the instance the previous frame
+            // produced: (frameIndex+1)%2; regular ones on frameIndex%2
+            const uint32_t instance = resource.slot(
+                barrierState.historySide ? (frameIndex + 1) % 2 : frameIndex % 2);
             switch (resource.kind) {
                 case ResourceKind::Buffer: {
                     vk::BufferMemoryBarrier barrier {
                         .srcAccessMask = barrierState.from.access,
                         .dstAccessMask = barrierState.to.access,
-                        .buffer = resource.getBuffer(),
+                        .buffer = resource.getBuffer(instance),
                         .size = vk::WholeSize,
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -814,7 +861,7 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
                         .dstAccessMask = barrierState.to.access,
                         .oldLayout = barrierState.from.layout,
                         .newLayout = barrierState.to.layout,
-                        .image = resource.getImage(),
+                        .image = resource.getImage(instance),
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                         .subresourceRange = {
@@ -831,12 +878,9 @@ void O5MRendergraph::execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue q
             }
         };
 
-        std::for_each(pass.compiled.enterBarrier.begin(), pass.compiled.enterBarrier.end(), emitBarrier);//iterator to set up barrier
-        O5MRenderContext ctx(pass, m_physicalResources);                            
+        std::for_each(plan.begin(), plan.end(), emitBarrier);
+        O5MRenderContext ctx(pass, m_physicalResources, static_cast<int>(frameIndex));
         pass.executeFunc(ctx, commandBuffer);
-        //I think this is finished right here
-        //Gosh my embedding server dead 
-       
     }
 
     commandBuffer.end();
@@ -961,16 +1005,24 @@ void O5MRendergraph::dump(void) const {
         printUses("read :", pass.reads);
         printUses("write:", pass.writes);
         printUses("rw   :", pass.readWrites);
+        printUses("hist :", pass.readHistorys);
 
-        for (const auto& barrier : pass.compiled.enterBarrier) {
-            std::cout << "        barrier " << resourceName(barrier.handle) << "\n"
-                      << "            from { " << vk::to_string(barrier.from.stages)
-                      << " | " << vk::to_string(barrier.from.access) << " | "
-                      << vk::to_string(barrier.from.layout) << " }\n"
-                      << "            to   { " << vk::to_string(barrier.to.stages)
-                      << " | " << vk::to_string(barrier.to.access) << " | "
-                      << vk::to_string(barrier.to.layout) << " }\n";
-        }
+        const auto printBarriers = [this, &resourceName](
+                                       const char* label,
+                                       const std::vector<BarrierState>& barriers) {
+            for (const auto& barrier : barriers) {
+                std::cout << "        " << label << " barrier " << resourceName(barrier.handle)
+                          << (barrier.historySide ? " [history]" : "") << "\n"
+                          << "            from { " << vk::to_string(barrier.from.stages)
+                          << " | " << vk::to_string(barrier.from.access) << " | "
+                          << vk::to_string(barrier.from.layout) << " }\n"
+                          << "            to   { " << vk::to_string(barrier.to.stages)
+                          << " | " << vk::to_string(barrier.to.access) << " | "
+                          << vk::to_string(barrier.to.layout) << " }\n";
+            }
+        };
+        printBarriers("first:", pass.compiled.firstFrameBarrier);
+        printBarriers("steady", pass.compiled.steadyBarrier);
     }
 
     // 2) resource lifecycle table.

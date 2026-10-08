@@ -1,6 +1,7 @@
 #ifndef O5M_RENDERGRAPH_TYPE_H
 #define O5M_RENDERGRAPH_TYPE_H
 
+#include <array>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -33,48 +34,62 @@ namespace O5MRendergraphNS {
     using ResourceHandle = std::uint32_t;
     using UseID = std::uint32_t;
 
+    // Instance slots: hasHistory resources get TWO image/view instances
+    // (ping-pong; current = frameIndex % 2, history = the other one).
+    // Plain resources have one instance -- slot() maps every index to it,
+    // so callers never need to branch on hasHistory.
     //TODO: access interface
     //Still don't understand why I use variant or don'
     struct PhysicalResource {
         struct OwnedResource{
-            vk::raii::Image image = nullptr;
-            vk::raii::Buffer buffer = nullptr;
-            vk::raii::ImageView view = nullptr;
-            vk::raii::DeviceMemory memory = nullptr;
+            std::array<vk::raii::Image, 2> image = { nullptr, nullptr };
+            std::array<vk::raii::Buffer, 2> buffer = { nullptr, nullptr };
+            std::array<vk::raii::ImageView, 2> view = { nullptr, nullptr };
+            std::array<vk::raii::DeviceMemory, 2> memory = { nullptr, nullptr };
         };
 
         struct ImportedResource {
-            vk::Image image = nullptr;
-            vk::ImageView view = nullptr;
-            vk::Buffer buffer = nullptr;
+            // raw handles: the graph references but never owns them
+            std::array<vk::Image, 2> image = { nullptr, nullptr };
+            std::array<vk::ImageView, 2> view = { nullptr, nullptr };
+            std::array<vk::Buffer, 2> buffer = { nullptr, nullptr };
         };
+
+        bool hasHistory = false;
 
         ResourceKind kind;
         ResourceSource source;
         std::variant<OwnedResource, ImportedResource> resource;
 
-        vk::Image getImage(void) {
-            return source == ResourceSource::Imported 
-                ? std::get<ImportedResource>(resource).image 
-                : std::get<OwnedResource>(resource).image;
+        uint32_t slot(uint32_t instance) const {
+            return hasHistory ? instance % 2 : 0;
         }
 
-        vk::Buffer getBuffer(void) {
-            return source == ResourceSource::Imported 
-                ? std::get<ImportedResource>(resource).buffer 
-                : std::get<OwnedResource>(resource).buffer;
-        }
-
-        vk::ImageView getView(void) {
+        vk::Image getImage(uint32_t instance = 0) {
+            const uint32_t i = slot(instance);
             return source == ResourceSource::Imported
-                ? std::get<ImportedResource>(resource).view
-                : std::get<OwnedResource>(resource).view;
+                ? std::get<ImportedResource>(resource).image[i]
+                : std::get<OwnedResource>(resource).image[i];
+        }
+
+        vk::Buffer getBuffer(uint32_t instance = 0) {
+            const uint32_t i = slot(instance);
+            return source == ResourceSource::Imported
+                ? std::get<ImportedResource>(resource).buffer[i]
+                : std::get<OwnedResource>(resource).buffer[i];
+        }
+
+        vk::ImageView getView(uint32_t instance = 0) {
+            const uint32_t i = slot(instance);
+            return source == ResourceSource::Imported
+                ? std::get<ImportedResource>(resource).view[i]
+                : std::get<OwnedResource>(resource).view[i];
         }
 
         vk::DeviceMemory getMemory(void) {
             if (source == ResourceSource::Imported)
                  throw std::runtime_error("Imported resource does not own device memory.");
-             return std::get<OwnedResource>(resource).memory;
+             return std::get<OwnedResource>(resource).memory[0];
         }
     };
 
@@ -107,6 +122,8 @@ namespace O5MRendergraphNS {
 
     //maybe we need to expose an api to create 'ResourceInfo' for user.
     struct ResourceInfo {
+        bool hasHistory = false;
+
         std::string debugName;
         ResourceHandle handle;
 
@@ -122,6 +139,7 @@ namespace O5MRendergraphNS {
               handle(other.handle),
               kind(other.kind),
               source(other.source),
+              hasHistory(other.hasHistory),
               firstUse(other.firstUse),
               lastUse(other.lastUse),
               info(other.info) {}
@@ -314,11 +332,21 @@ namespace O5MRendergraphNS {
 
         SyncScope from;
         SyncScope to;
+
+        // true: this barrier targets the OTHER ping-pong instance, i.e. the
+        // one the PREVIOUS frame produced (a history read)
+        bool historySide = false;
     };
 
     struct PassDesc {
         struct Compiled {
-            std::vector<BarrierState> enterBarrier;//from to
+            // Two plans baked by compile() from a two-round simulation:
+            //   round 0: cold start from initial states  -> firstFrameBarrier
+            //   round 1: continues round 0's end states  -> steadyBarrier
+            // execute(frameIndex) replays firstFrameBarrier for frame 0 and
+            // steadyBarrier for every later frame; steady state repeats.
+            std::vector<BarrierState> firstFrameBarrier;
+            std::vector<BarrierState> steadyBarrier;
         } compiled; //this will be filled after "compile"
 
         const std::string debugName;

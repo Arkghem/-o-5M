@@ -192,19 +192,39 @@ int main() {
         std::cout << "[ok] texture loaded (stbi -> staging -> device image, "
                   << kCheckerPngSize << "B PNG -> " << kTexSize << "x" << kTexSize << " RGBA)\n";
 
-        // ---- 4. graph 资源：sRGB 输出图 + 回读 buffer ----
+        // ---- 4. graph: imported texture (TextureResource) + created target +
+        //      imported readback buffer ----
         const vk::Extent2D extent{ kTexSize, kTexSize };
 
         O5MRendergraph graph(o5mDevice);
-        graph.addResource("finalColor", vk::Format::eR8G8B8A8Srgb, extent,
-                          vk::ImageUsageFlagBits::eColorAttachment |
-                              vk::ImageUsageFlagBits::eTransferSrc,
-                          vk::ImageLayout::eUndefined,
-                          vk::ImageLayout::eTransferSrcOptimal);
-        graph.addBufferResource("readback", kTexSize * kTexSize * 4,
-                                vk::BufferUsageFlagBits::eTransferDst,
-                                vk::MemoryPropertyFlagBits::eHostVisible |
-                                    vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        // the loaded texture enters the graph as an imported resource:
+        // the graph validates usage (needs eSampled) and tracks its layout
+        // (load() leaves it in eShaderReadOnlyOptimal) but never owns it
+        std::string checkerName = "checker";
+        ResourceInfo checkerInfo(checkerName, extent, vk::Format::eR8G8B8A8Srgb,
+                                 ResourceSource::Imported);
+        graph.importTexture(checkerName, texRes.getImage(), texRes.getImageView(),
+                            vk::Format::eR8G8B8A8Srgb, extent,
+                            vk::ImageUsageFlagBits::eSampled,
+                            vk::ImageLayout::eShaderReadOnlyOptimal);
+
+        // render target: usage flags are derived by compile() from the UseDecls
+        std::string finalColorName = "finalColor";
+        ResourceInfo finalColorInfo(finalColorName, extent, vk::Format::eR8G8B8A8Srgb);
+
+        // readback buffer lives outside the graph (we map OUR memory after)
+        auto [readbackBuffer, readbackMemory] = o5mDevice.createBuffer(
+            vk::DeviceSize(kTexSize) * kTexSize * 4, vk::BufferUsageFlagBits::eTransferDst,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+        std::string readbackName = "readback";
+        ResourceInfo readbackInfo(readbackName, vk::DeviceSize(kTexSize) * kTexSize * 4,
+                                  ResourceSource::Imported);
+        graph.importBuffer(readbackName, *readbackBuffer,
+                           vk::DeviceSize(kTexSize) * kTexSize * 4,
+                           vk::BufferUsageFlagBits::eTransferDst);
+        graph.markOutput(readbackInfo.handle); // root for dead-pass culling
 
         O5MShaderResource vsRes("fullscreen.vert", vk::ShaderStageFlagBits::eVertex, o5mDevice);
         O5MShaderResource blitFsRes("blit.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
@@ -238,32 +258,8 @@ int main() {
                                     "main", "main", *descLayout);
         std::cout << "[ok] pipeline created\n";
 
-        // descSet 先声明后赋值：pass 回调按引用捕获，execute 时取值
-        vk::DescriptorSet descSet;
-
-        graph.addPass("blit", {}, { "finalColor" },
-            [&](vk::raii::CommandBuffer& cmd) {
-                blitPipeline.begin(cmd, { *graph.getResource("finalColor")->imageView }, extent);
-                blitPipeline.bindDescriptorSet(cmd, descSet);
-                cmd.draw(3, 1, 0, 0);
-                blitPipeline.end(cmd);
-            });
-
-        graph.addPass("readback", { "finalColor" }, { "readback" },
-            [&](vk::raii::CommandBuffer& cmd) {
-                vk::BufferImageCopy region(
-                    0, 0, 0,
-                    { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
-                    { 0, 0, 0 }, { kTexSize, kTexSize, 1 });
-                cmd.copyImageToBuffer(*graph.getResource("finalColor")->image,
-                                      vk::ImageLayout::eTransferSrcOptimal,
-                                      *graph.getResource("readback")->buffer, region);
-            });
-
-        graph.compile();
-        std::cout << "[ok] graph compiled\n";
-
-        // descriptor write：契约 —— load() 后纹理处于 eShaderReadOnlyOptimal
+        // descSet: written before execute -- the imported texture view is
+        // available right after load(), no record-time update needed
         const std::vector<vk::DescriptorPoolSize> poolSizes = {
             { vk::DescriptorType::eCombinedImageSampler, 1 },
         };
@@ -272,7 +268,7 @@ int main() {
         vk::raii::DescriptorPool descPool(o5mDevice.getDevice(), poolInfoFull);
         vk::DescriptorSetAllocateInfo allocInfo(*descPool, { *descLayout });
         vk::raii::DescriptorSets descSets(o5mDevice.getDevice(), allocInfo);
-        descSet = descSets.front();
+        vk::DescriptorSet descSet = descSets.front();
 
         vk::DescriptorImageInfo texInfo(
             *sampler, texRes.getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -281,6 +277,38 @@ int main() {
         };
         o5mDevice.getDevice().updateDescriptorSets(writes, {});
         std::cout << "[ok] descriptor written (view + nearest sampler)\n";
+
+        // passes: setup declares reads/writes; barriers are derived at compile
+        graph.addGraphicPass("blit",
+            [&](O5MPassBuilder& b) {
+                b.read(checkerInfo, TexRead::Sampled);
+                b.write(finalColorInfo, TexWrite::ColorStore);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                blitPipeline.begin(cmd, { ctx.getImageView(finalColorInfo.handle) }, extent);
+                blitPipeline.bindDescriptorSet(cmd, descSet);
+                cmd.draw(3, 1, 0, 0);
+                blitPipeline.end(cmd);
+            });
+
+        graph.addGraphicPass("readback",
+            [&](O5MPassBuilder& b) {
+                b.read(finalColorInfo, TexRead::TransferSrc);
+                b.write(readbackInfo, BufWrite::TransferDst);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                vk::BufferImageCopy region(
+                    0, 0, 0,
+                    { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                    { 0, 0, 0 }, { kTexSize, kTexSize, 1 });
+                // layout is guaranteed eTransferSrcOptimal by the compiled barrier
+                cmd.copyImageToBuffer(ctx.getImage(finalColorInfo.handle),
+                                      vk::ImageLayout::eTransferSrcOptimal,
+                                      ctx.getBuffer(readbackInfo.handle), region);
+            });
+
+        graph.compile();
+        std::cout << "[ok] graph compiled\n";
 
         // ---- 5. 执行 + 校验 ----
         vk::raii::Fence fence(o5mDevice.getDevice(), vk::FenceCreateInfo());
@@ -293,7 +321,7 @@ int main() {
 
         // 探针覆盖两种颜色 + 四角附近；Vulkan Y 朝下，vUV=(x+0.5)/W 与纹素一一对应
         const uint8_t* pixels = static_cast<const uint8_t*>(
-            graph.getResource("readback")->memory.mapMemory(0, vk::WholeSize));
+            readbackMemory.mapMemory(0, vk::WholeSize));
         struct Probe { uint32_t x, y; };
         const Probe probes[] = {
             { 4, 4 },     // cell(0,0)=A
@@ -317,7 +345,7 @@ int main() {
                 }
             }
         }
-        graph.getResource("readback")->memory.unmapMemory();
+        readbackMemory.unmapMemory();
 
         if (!ok) {
             return 1;

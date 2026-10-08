@@ -101,6 +101,18 @@ void main() {
 }
 )GLSL";
 
+// history probe: passthrough-sample the PREVIOUS frame's finalColor
+// (exercises readHistory / ping-pong; verified on CPU after frame 1)
+const char* kCopyFrag = R"GLSL(
+#version 450
+layout(location = 0) in vec2 vUV;
+layout(location = 0) out vec4 outColor;
+layout(set = 0, binding = 1) uniform sampler2D historyColor;
+void main() {
+    outColor = vec4(texture(historyColor, vUV).rgb, 1.0);
+}
+)GLSL";
+
 // CPU-side recomputation of the shader math (double precision)
 double shaderMath(double channel) {
     double c = channel / (1.0 + channel);
@@ -175,7 +187,9 @@ int main() {
         std::cout << "[ok] device + graphics queue (family " << graphicsFamily << ")\n";
 
         // ---- 4. command pool + one command buffer ----
-        vk::raii::CommandPool commandPool(o5mDevice.getDevice(), { {}, graphicsFamily });
+        // eResetCommandBuffer: the graph re-begins the buffer every frame
+        vk::raii::CommandPool commandPool(o5mDevice.getDevice(),
+            { vk::CommandPoolCreateFlagBits::eResetCommandBuffer, graphicsFamily });
         vk::raii::CommandBuffers commandBuffers(
             o5mDevice.getDevice(), { *commandPool, vk::CommandBufferLevel::ePrimary, 1 });
 
@@ -221,15 +235,35 @@ int main() {
                            vk::BufferUsageFlagBits::eTransferDst);
         graph.markOutput(readbackInfo.handle); // root for dead-pass culling
 
+        // history probe chain: finalColor gets a readHistory declaration ->
+        // compile() gives it TWO ping-pong instances. probeImage catches the
+        // sampled history, a second imported buffer reads it back.
+        std::string probeName = "historyProbe";
+        ResourceInfo probeInfo(probeName, extent, vk::Format::eR8G8B8A8Unorm);
+
+        auto [histBuffer, histMemory] = o5mDevice.createBuffer(
+            vk::DeviceSize(kSize) * kSize * 4, vk::BufferUsageFlagBits::eTransferDst,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+        std::string histReadbackName = "historyReadback";
+        ResourceInfo histReadbackInfo(histReadbackName, vk::DeviceSize(kSize) * kSize * 4,
+                                      ResourceSource::Imported);
+        graph.importBuffer(histReadbackName, *histBuffer,
+                           vk::DeviceSize(kSize) * kSize * 4,
+                           vk::BufferUsageFlagBits::eTransferDst);
+        graph.markOutput(histReadbackInfo.handle);
+
         // 5c. shaders: embedded GLSL, runtime shaderc compile
         // (direct construction: the manager's create() is still buggy, bypassed)
         O5MShaderResource vsRes("fullscreen.vert", vk::ShaderStageFlagBits::eVertex, o5mDevice);
         O5MShaderResource sceneFsRes("scene.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
         O5MShaderResource postFsRes("post.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
+        O5MShaderResource copyFsRes("copy.frag", vk::ShaderStageFlagBits::eFragment, o5mDevice);
         vsRes.setData(const_cast<char*>(kFullscreenVert), std::strlen(kFullscreenVert) + 1);
         sceneFsRes.setData(const_cast<char*>(kSceneFrag), std::strlen(kSceneFrag) + 1);
         postFsRes.setData(const_cast<char*>(kPostFrag), std::strlen(kPostFrag) + 1);
-        vsRes.load(); sceneFsRes.load(); postFsRes.load();
+        copyFsRes.setData(const_cast<char*>(kCopyFrag), std::strlen(kCopyFrag) + 1);
+        vsRes.load(); sceneFsRes.load(); postFsRes.load(); copyFsRes.load();
         std::cout << "[ok] shaders compiled (GLSL -> SPIR-V via shaderc)\n";
 
         // 5d. descriptor layout: b0 = UBO(params), b1 = sampler2D(sceneColor)
@@ -244,19 +278,20 @@ int main() {
         vk::raii::DescriptorSetLayout descLayout(o5mDevice.getDevice(), layoutInfo);
 
         const std::vector<vk::DescriptorPoolSize> poolSizes = {
-            { vk::DescriptorType::eUniformBuffer, 2 },
-            { vk::DescriptorType::eCombinedImageSampler, 1 },
+            { vk::DescriptorType::eUniformBuffer, 3 },
+            { vk::DescriptorType::eCombinedImageSampler, 3 },
         };
         vk::DescriptorPoolCreateInfo poolInfo(
-            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 2, poolSizes);
+            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 3, poolSizes);
         vk::raii::DescriptorPool descPool(o5mDevice.getDevice(), poolInfo);
-        std::vector<vk::DescriptorSetLayout> setLayouts{ *descLayout, *descLayout };
+        std::vector<vk::DescriptorSetLayout> setLayouts{ *descLayout, *descLayout, *descLayout };
         vk::DescriptorSetAllocateInfo allocInfo(*descPool, setLayouts);
         vk::raii::DescriptorSets descSets(o5mDevice.getDevice(), allocInfo);
         // one set per pipeline: updating a set that an earlier pass already
         // bound would invalidate the command buffer
         vk::DescriptorSet renderDescSet = descSets[0];
         vk::DescriptorSet postDescSet = descSets[1];
+        vk::DescriptorSet probeDescSet = descSets[2];
 
         vk::SamplerCreateInfo samplerInfo;
         samplerInfo.setMagFilter(vk::Filter::eLinear)
@@ -276,6 +311,10 @@ int main() {
         O5MPipeline postPipeline(o5mDevice);
         postPipeline.createPipeline({ vk::Format::eR8G8B8A8Unorm },
                                     vsRes.getShaderModule(), postFsRes.getShaderModule(),
+                                    "main", "main", *descLayout);
+        O5MPipeline copyPipeline(o5mDevice);
+        copyPipeline.createPipeline({ vk::Format::eR8G8B8A8Unorm },
+                                    vsRes.getShaderModule(), copyFsRes.getShaderModule(),
                                     "main", "main", *descLayout);
         std::cout << "[ok] pipelines created\n";
 
@@ -334,6 +373,46 @@ int main() {
                                       ctx.getBuffer(readbackInfo.handle), region);
             });
 
+        // history chain: readHistory excludes finalColor from the frame-
+        // internal dependency graph (no fake cycle); instead compile() gives
+        // it two ping-pong instances and bakes cross-frame barriers.
+        // frame 0 samples UNDEFINED content (guarded by only checking frame 1).
+        graph.addGraphicPass("historyProbe",
+            [&](O5MPassBuilder& b) {
+                b.readHistory(finalColorInfo, TexRead::Sampled);
+                b.write(probeInfo, TexWrite::ColorStore);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                vk::DescriptorImageInfo histInfo(
+                    *sampler, ctx.getHistoryImageView(finalColorInfo.handle),
+                    vk::ImageLayout::eShaderReadOnlyOptimal);
+                vk::WriteDescriptorSet write {
+                    probeDescSet, 1, 0, vk::DescriptorType::eCombinedImageSampler,
+                    histInfo, {}, {}
+                };
+                o5mDevice.getDevice().updateDescriptorSets(write, {});
+
+                copyPipeline.begin(cmd, { ctx.getImageView(probeInfo.handle) }, extent);
+                copyPipeline.bindDescriptorSet(cmd, probeDescSet);
+                cmd.draw(3, 1, 0, 0);
+                copyPipeline.end(cmd);
+            });
+
+        graph.addGraphicPass("historyReadback",
+            [&](O5MPassBuilder& b) {
+                b.read(probeInfo, TexRead::TransferSrc);
+                b.write(histReadbackInfo, BufWrite::TransferDst);
+            },
+            [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                vk::BufferImageCopy region(
+                    0, 0, 0,
+                    { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                    { 0, 0, 0 }, { kSize, kSize, 1 });
+                cmd.copyImageToBuffer(ctx.getImage(probeInfo.handle),
+                                      vk::ImageLayout::eTransferSrcOptimal,
+                                      ctx.getBuffer(histReadbackInfo.handle), region);
+            });
+
         graph.compile();
         graph.dump();
         std::cout << "[ok] graph compiled\n";
@@ -355,14 +434,20 @@ int main() {
             o5mDevice.getDevice().updateDescriptorSets(write, {});
         }
 
-        // ---- 6. execute (fence sync) + verify ----
+        // ---- 6. execute twice (fence sync): frame 0 cold start, frame 1
+        //      reads frame 0's finalColor through history ping-pong ----
         vk::raii::Fence fence(o5mDevice.getDevice(), vk::FenceCreateInfo());
-        graph.execute(commandBuffers[0], *o5mDevice.getQueue(), &fence);
-        if (o5mDevice.getDevice().waitForFences(*fence, true, UINT64_MAX) !=
-            vk::Result::eSuccess) {
-            throw std::runtime_error("waitForFences failed");
+        for (uint32_t frame = 0; frame < 2; ++frame) {
+            graph.execute(commandBuffers[0], *o5mDevice.getQueue(), &fence, frame);
+            if (o5mDevice.getDevice().waitForFences(*fence, true, UINT64_MAX) !=
+                vk::Result::eSuccess) {
+                throw std::runtime_error("waitForFences failed");
+            }
+            if (frame == 0) {
+                o5mDevice.getDevice().resetFences(*fence);
+            }
         }
-        std::cout << "[ok] submitted + fence waited\n";
+        std::cout << "[ok] 2 frames submitted + fence waited (history ping-pong)\n";
 
         // CPU per-pixel check. No v-flip: Vulkan NDC is Y-down
         // ((-1,-1) = viewport top-left), the fullscreen triangle's vUV
@@ -395,11 +480,34 @@ int main() {
         }
         readbackMemory.unmapMemory();
 
+        // history verification: frame 1's history probe must equal frame 0's
+        // finalColor, i.e. exactly the same expected tonemap math
+        const uint8_t* histPixels = static_cast<const uint8_t*>(
+            histMemory.mapMemory(0, vk::WholeSize));
+        for (const auto& p : probes) {
+            const double u = (p.x + 0.5) / kSize;
+            const double v = (p.y + 0.5) / kSize;
+            const double expected[3] = {
+                shaderMath(u * kExposure), shaderMath(v * kExposure), shaderMath(0.25) };
+            const size_t i = (p.y * kSize + p.x) * 4;
+            for (int c = 0; c < 3; ++c) {
+                const int got = histPixels[i + c];
+                const int want = static_cast<int>(std::lround(expected[c] * 255.0));
+                if (std::abs(got - want) > 2) {
+                    std::cerr << "[FAIL] history pixel (" << p.x << "," << p.y << ") ch" << c
+                              << " got " << got << " want " << want << "\n";
+                    ok = false;
+                }
+            }
+        }
+        histMemory.unmapMemory();
+
         if (!ok) {
             return 1;
         }
         std::cout << "[ok] " << std::size(probes) << " pixels verified (UBO + tonemap math)\n";
-        std::cout << "[PASS] rhi_verify: render -> postprocess -> readback via Phase 1 graph\n";
+        std::cout << "[ok] history pixels verified (frame 1 sampled frame 0's finalColor)\n";
+        std::cout << "[PASS] rhi_verify: render -> postprocess -> readback + history ping-pong\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "[FAIL] " << e.what() << "\n";

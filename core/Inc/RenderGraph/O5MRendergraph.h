@@ -1,6 +1,7 @@
 #ifndef __O5MRENDERGRAPH__H
 #define __O5MRENDERGRAPH__H
 
+#include <array>
 #include <string>
 #include <vector>
 #include <concepts>
@@ -13,6 +14,7 @@
 #include "RenderGraph/O5MPassBuilder.h"
 #include "RenderGraph/O5MRenderContext.h"
 
+//To delete in next commit.
 /*
 class O5MRendergraph {
 public:
@@ -106,6 +108,10 @@ using namespace O5MRendergraphNS;
 //TODO: Input&Output pass need to be clarified in this graph.
 class O5MRendergraph {
 private:
+    // per-handle sync state, one slot per ping-pong instance (slot 0 only for
+    // non-history resources). Compile-time working memory for the two-round
+    // barrier simulation -- not read at execute time.
+    std::unordered_map<ResourceHandle, std::array<SyncScope, 2>> m_stateRecords;
     std::unordered_map<ResourceHandle, ResourceInfo> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
     std::unordered_map<ResourceHandle, PhysicalResource> m_physicalResources; //the place we put the physcial resource in
 
@@ -183,8 +189,10 @@ public:
     );
 
     void compile(void);
+    // frameIndex: which frame this submit is. 0 replays the cold-start plan,
+    // >= 1 replays the steady-state plan; parity picks ping-pong instances.
     void execute(vk::raii::CommandBuffer& commandBuffer, vk::Queue queue,
-                 vk::raii::Fence* fence = nullptr); 
+                 vk::raii::Fence* fence = nullptr, uint32_t frameIndex = 0);
 
     //debug only: print out the compile result
     void dump(void) const;
