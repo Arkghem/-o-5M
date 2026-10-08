@@ -3,21 +3,22 @@
 // 已搭好的（脚手架区）：
 //   GLFW 窗口 + surface + swapchain + resize 重建 + 事件队列
 //   RenderGraph 接线：当帧 acquire 的 swapchain image 以 importTexture 进图
-//   （初始布局 ePresentSrcKHR），TexWrite::Present 出图（exit barrier 转 present）
-//   帧循环 v0：单 slot 同步（每帧 fence 等完再录下一帧）——正确但无流水
+//   （初始布局 eUndefined），TexWrite::Present 出图（exit barrier 转 present）
+//   帧循环 v1：frames-in-flight = 2（双 slot fence/semaphore/cmd/UBO + per-image
+//   renderFinished），CPU 与 GPU 重叠一帧
 //   --frames N 冒烟参数（无人值守跑 N 帧退出）
 //
 // 设计取舍（对应 phase2 文档 决策点 4 的延伸）：swapchain image 每帧一换，
 // 不做成常驻图资源——否则屏障计划会转换"present 引擎还持有"的未 acquire 图像。
 // 每帧 buildGraph(imageIndex) 只 import 当帧那张，compile 是纯 CPU 小开销。
 //
-// TODO(user)（本阶段核心学习点，见 docs/phase2-window-frameloop-design.md §4）：
-//   [1] 把 v0 单 slot 升级为 frames-in-flight = 2：
-//       cmd/fence/imageAvailable/renderFinished/UBO 各两份，按 frameIndex % 2 取用；
-//       推导 waitForFences/resetFences 的正确位置（为什么在 acquire 之前？）
-//   [2] acquire 返回 out-of-date 时哪些对象已脏（semaphore 状态查规范）？
-//   [3] 相机：O5MFpsCamera 的 view/proj 数学 + aspect 修正 + dt 移动（Events 消费）
-//   [4] shader：把 viewProj 应用到世界空间三角形上（目前是 passthrough）
+// 学习方式（分工重定，见 docs/phase2-exercises.md）：
+//   本文件的同步编排实现（v1 frames-in-flight）已完成 —— 学习点改为
+//   「读代码 + 做推导练习」：swapchain 参数取舍、三信号物语义、双 slot
+//   时序、三颗已踩的雷，全部整理在 docs/phase2-exercises.md 的清单里。
+//   相机由你从零写：新建 core/Inc/Scene/O5MFpsCamera.h/.cpp，接口约定见
+//   exercises 文档末尾「相机接入点」，写好后替换本文件的 O5MFpsCamera 占位。
+//   shader（viewProj 应用）仍归你：kViewerVert 里的 TODO(user)。
 //
 // 退出码：0 = 正常退出（关窗或 --frames 到数）。
 
@@ -202,24 +203,33 @@ int main(int argc, char** argv) {
                   << swapchain.getExtent().height << " "
                   << vk::to_string(swapchain.getFormat()) << "\n";
 
-        // ---- 5. per-frame sync objects (v0: SINGLE slot) ----
-        // TODO(user) [1]: 升级为 std::array<..., 2>，按 frameIndex % 2 取用
+        // ---- 5. per-frame sync objects: frames-in-flight = 2 ----
+        // 资源分两个池，别混：
+        //   per FRAME SLOT（frameIndex % 2）：cmd / fence / imageAvailable /
+        //     camera UBO —— CPU 复用它们前必须等 fence（slot 空闲）
+        //   per SWAPCHAIN IMAGE（acquire 下标）：renderFinished —— present
+        //     引擎在 image 重新 acquire 前仍持有它，按帧分会在轮换中冲突
+        constexpr uint32_t kInFlight = 2;
+
         vk::raii::CommandPool commandPool(
             device.getDevice(),
             { vk::CommandPoolCreateFlagBits::eResetCommandBuffer, graphicsFamily });
         vk::raii::CommandBuffers commandBuffers(
-            device.getDevice(), { *commandPool, vk::CommandBufferLevel::ePrimary, 1 });
-
-        // eSignaled：首帧的 waitForFences 必须立刻通过（fence 语义是
-        // "本 slot 的提交是否完成"，首帧之前 slot 本来就是空的）
-        vk::raii::Fence frameFence(
             device.getDevice(),
-            vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled });
+            { *commandPool, vk::CommandBufferLevel::ePrimary, kInFlight });
+        std::array<vk::raii::Fence, kInFlight> frameFences = {
+            vk::raii::Fence(device.getDevice(),
+                vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled }),
+            vk::raii::Fence(device.getDevice(),
+                vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled }),
+        };
+        // eSignaled：首圈每个 slot 的第一次 waitForFences 必须立刻通过
+        // （fence 语义是"本 slot 上一次提交是否完成"，没提交过 = 完成）
         vk::SemaphoreCreateInfo semInfo;
-        vk::raii::Semaphore imageAvailable(device.getDevice(), semInfo);
-        // renderFinished 按图分配：present 引擎在 image 重新 acquire 之前
-        // 仍"持有"上一次 present 等待过的 semaphore，单一枚会在轮换中复用
-        // 冲突（VUID-vkQueueSubmit-pSignalSemaphores-00067）
+        std::array<vk::raii::Semaphore, kInFlight> imageAvailable = {
+            vk::raii::Semaphore(device.getDevice(), semInfo),
+            vk::raii::Semaphore(device.getDevice(), semInfo),
+        };
         auto makeRenderFinished = [&]() {
             std::vector<vk::raii::Semaphore> pool;
             pool.reserve(swapchain.getImageCount());
@@ -229,11 +239,20 @@ int main(int argc, char** argv) {
         };
         auto renderFinishedPool = makeRenderFinished();
 
-        // camera UBO（HOST_VISIBLE，每帧 map 写入）
-        auto [cameraBuffer, cameraMemory] = device.createBuffer(
-            sizeof(CameraUBO), vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent);
+        // camera UBO 每 slot 一份：CPU 写 frame N 的 UBO 时，GPU 可能还在读
+        // frame N-1 的 —— 同一份内存就成数据竞争，这正是 in-flight 的意义
+        std::array<vk::raii::Buffer, kInFlight> cameraBuffers = {
+            vk::raii::Buffer(nullptr), vk::raii::Buffer(nullptr) };
+        std::array<vk::raii::DeviceMemory, kInFlight> cameraMemories = {
+            vk::raii::DeviceMemory(nullptr), vk::raii::DeviceMemory(nullptr) };
+        for (uint32_t i = 0; i < kInFlight; ++i) {
+            auto [buf, mem] = device.createBuffer(
+                sizeof(CameraUBO), vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
+            cameraBuffers[i] = std::move(buf);
+            cameraMemories[i] = std::move(mem);
+        }
 
         // ---- 6. 与 image 无关的长寿对象：shader / pipeline / descriptor ----
         O5MShaderResource vsRes("viewer.vert", vk::ShaderStageFlagBits::eVertex, device);
@@ -255,25 +274,34 @@ int main(int argc, char** argv) {
                                 "main", "main", *descLayout);
 
         const std::vector<vk::DescriptorPoolSize> poolSizes = {
-            { vk::DescriptorType::eUniformBuffer, 1 },
+            { vk::DescriptorType::eUniformBuffer, kInFlight },
         };
         vk::raii::DescriptorPool descPool(
             device.getDevice(),
             vk::DescriptorPoolCreateInfo(
-                vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, poolSizes));
-        vk::DescriptorSetAllocateInfo allocInfo(*descPool, { *descLayout });
+                vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                kInFlight, poolSizes));
+        // 每 slot 一个 set：分别绑到各自的 camera UBO 上
+        std::vector<vk::DescriptorSetLayout> layouts;
+        layouts.reserve(kInFlight);
+        for (uint32_t i = 0; i < kInFlight; ++i)
+            layouts.push_back(*descLayout);
+        vk::DescriptorSetAllocateInfo allocInfo(*descPool, layouts);
         vk::raii::DescriptorSets descSets(device.getDevice(), allocInfo);
-        vk::DescriptorSet descSet = descSets.front();
-
-        vk::DescriptorBufferInfo uboInfo(*cameraBuffer, 0, sizeof(CameraUBO));
-        vk::WriteDescriptorSet write {
-            descSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {}
+        std::array<vk::DescriptorSet, kInFlight> camDescSets = {
+            descSets[0], descSets[1]
         };
-        device.getDevice().updateDescriptorSets(write, {});
-        std::cout << "[ok] pipeline + descriptor ready\n";
+        for (uint32_t i = 0; i < kInFlight; ++i) {
+            vk::DescriptorBufferInfo uboInfo(*cameraBuffers[i], 0, sizeof(CameraUBO));
+            vk::WriteDescriptorSet write {
+                camDescSets[i], 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {}
+            };
+            device.getDevice().updateDescriptorSets(write, {});
+        }
+        std::cout << "[ok] pipeline + descriptors ready (2 slots)\n";
 
-        // ---- 每帧一图：只 import 当帧 acquire 的那张 image ----
-        auto buildGraph = [&](uint32_t imageIndex) -> std::unique_ptr<O5MRendergraph> {
+        // ---- 每帧一图：import 当帧 acquire 的 image + 当帧 slot 的相机 UBO ----
+        auto buildGraph = [&](uint32_t imageIndex, uint32_t frame) -> std::unique_ptr<O5MRendergraph> {
             auto graph = std::make_unique<O5MRendergraph>(device);
             const vk::Extent2D extent = swapchain.getExtent();
 
@@ -294,7 +322,7 @@ int main(int argc, char** argv) {
             std::string camName = "camera";
             ResourceInfo camInfo(camName, static_cast<vk::DeviceSize>(sizeof(CameraUBO)),
                                  ResourceSource::Imported);
-            graph->importBuffer(camName, *cameraBuffer, sizeof(CameraUBO),
+            graph->importBuffer(camName, *cameraBuffers[frame], sizeof(CameraUBO),
                                 vk::BufferUsageFlagBits::eUniformBuffer);
 
             // ResourceInfo 按值捕获进 lambda（图的生命周期长于本函数栈帧）
@@ -303,10 +331,10 @@ int main(int argc, char** argv) {
                     b.write(bbInfo, TexWrite::Present);
                     b.read(camInfo, BufRead::Uniform);
                 },
-                [bbInfo, extent, &pipeline, descSet]
+                [bbInfo, extent, &pipeline, camDescSets, frame]
                 (O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
                     pipeline.begin(cmd, { ctx.getImageView(bbInfo.handle) }, extent);
-                    pipeline.bindDescriptorSet(cmd, descSet);
+                    pipeline.bindDescriptorSet(cmd, camDescSets[frame]);
                     cmd.draw(3, 1, 0, 0);
                     pipeline.end(cmd);
                 });
@@ -339,17 +367,17 @@ int main(int argc, char** argv) {
                 static_cast<float>(swapchain.getExtent().height);
             camera.onUpdate(dt, aspect);
 
-            // v0：先等上一帧完成（保守、正确、无流水）。
-            // 顺序很重要：必须 BEFORE acquire —— 否则会在上一帧 submit 仍
-            // pending 时复用 imageAvailable（semaphore 不允许并发信号）。
-            // TODO(user) [1]: 换成 per-slot fence 的等待/重置 + 双份对象，
-            //                  使 CPU 与 GPU 重叠一帧
-            device.getDevice().waitForFences(*frameFence, true, UINT64_MAX);
-            device.getDevice().resetFences(*frameFence);
+            // ---- slot 同步：等本 slot 上一次提交完成（而非"上一帧"！）----
+            // kInFlight=2 时 CPU 最多超前 GPU 一帧；slot N 的 fence 只在
+            // frameIndex 与 frameIndex-2 之间复用时被等。必须在 acquire 前：
+            // 复用 imageAvailable[slot] 前要保证它的信号/等待都已结算。
+            const uint32_t frame = frameIndex % kInFlight;
+            device.getDevice().waitForFences(*frameFences[frame], true, UINT64_MAX);
+            device.getDevice().resetFences(*frameFences[frame]);
 
             // ---- acquire（可能带回重建请求） ----
             const bool resizeFlag = window.takeResizeFlag();
-            auto [acqIndex, needsRebuild] = swapchain.acquire(imageAvailable);
+            auto [acqIndex, needsRebuild] = swapchain.acquire(imageAvailable[frame]);
             if (resizeFlag || needsRebuild) {
                 auto [w, h] = window.getFramebufferSize();
                 swapchain.rebuild({ w, h });   // views/images 全部换新
@@ -358,7 +386,7 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            // camera UBO host write
+            // camera UBO host write（只写本 slot 的那份，另一份 GPU 可能还在读）
             {
                 CameraUBO ubo {
                     .view = camera.view,
@@ -366,20 +394,20 @@ int main(int argc, char** argv) {
                     .camPos = glm::vec4(camera.position, 1.0f),
                     .params = { 0.f, aspect, 0.f, 0.f }
                 };
-                void* mapped = cameraMemory.mapMemory(0, vk::WholeSize);
+                void* mapped = cameraMemories[frame].mapMemory(0, vk::WholeSize);
                 std::memcpy(mapped, &ubo, sizeof(ubo));
-                cameraMemory.unmapMemory();
+                cameraMemories[frame].unmapMemory();
             }
 
-            auto graph = buildGraph(acqIndex);
+            auto graph = buildGraph(acqIndex, frame);
             if (frameIndex == 0)
                 graph->dump();
 
-            // frameIndex 恒为 0：本图是"每帧一建"的单发图，永远走冷启动
-            // 计划（UNDEFINED -> colorAttachment -> present）。稳态计划的前提
-            // 是"同一张 image 连续复用"，per-frame graph 不成立。
-            graph->execute(commandBuffers[0], *device.getQueue(), &frameFence,
-                           /*frameIndex=*/0, &imageAvailable,
+            // 单发图永远走冷启动计划（UNDEFINED -> colorAttachment ->
+            // present）；稳态计划的前提是"同一张 image 连续复用"，不成立。
+            graph->execute(commandBuffers[frame], *device.getQueue(),
+                           &frameFences[frame],
+                           /*frameIndex=*/0, &imageAvailable[frame],
                            &renderFinishedPool[acqIndex]);
 
             if (!swapchain.present(*device.getQueue(), acqIndex,
@@ -401,6 +429,9 @@ int main(int argc, char** argv) {
         }
 
         // ---- 8. clean shutdown: all in-flight work must retire ----
+        // waitIdle 已保证两份 fence 全部 signaled；显式再等一遍是防御式写法
+        for (uint32_t i = 0; i < kInFlight; ++i)
+            device.getDevice().waitForFences(*frameFences[i], true, UINT64_MAX);
         device.getQueue().waitIdle();
         std::cout << "[ok] " << frameIndex << " frames rendered, clean exit\n";
         return 0;

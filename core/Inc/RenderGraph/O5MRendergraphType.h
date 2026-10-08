@@ -40,8 +40,6 @@ namespace O5MRendergraphNS {
     // (ping-pong; current = frameIndex % 2, history = the other one).
     // Plain resources have one instance -- slot() maps every index to it,
     // so callers never need to branch on hasHistory.
-    //TODO: access interface
-    //Still don't understand why I use variant or don'
     struct PhysicalResource {
         struct OwnedResource{
             std::array<vk::raii::Image, 2> image = { nullptr, nullptr };

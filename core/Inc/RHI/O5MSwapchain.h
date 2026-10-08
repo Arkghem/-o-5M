@@ -1,14 +1,6 @@
 #ifndef __O5MSWAPCHAIN__H
 #define __O5MSWAPCHAIN__H
 
-// Swapchain ownership + acquire/present orchestration (Phase 2 scaffold,
-// AI-owned). Object CREATION stays in O5MDevice (centralized device law);
-// this class only holds the bundle and drives acquire/present/rebuild.
-//
-// Sync contract for the frame loop (see docs/phase2-window-frameloop-design.md §1):
-//   acquire(imageAvailable)  -- semaphore signaled when the image is writable
-//   present(index, renderFinished) -- semaphore waited before the image shows
-
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
