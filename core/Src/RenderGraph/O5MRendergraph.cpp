@@ -2,6 +2,7 @@
 
 #include "RenderGraph/O5MRendergraph.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 #include <iostream>
@@ -122,36 +123,6 @@ void O5MRendergraph::compile(void) {
         nodes[passIdx] = node;
     }
 
-    //cycle detect
-    //deprecated
-    /*std::queue<uint32_t> queue;
-    std::vector<bool> visited(m_passDescs.size(), false);
-    queue.push(0);
-    while (!queue.empty()) {
-        auto idx = queue.front();
-        queue.pop();
-        visited[idx] = true;
-
-        for (auto dep : nodes[idx].RAW) {
-            if (!visited[dep]) 
-                queue.push(dep);
-            else
-                throw std::runtime_error("Cycle detected in render graph");
-        }
-        for (auto dep : nodes[idx].WAR) {
-            if (!visited[dep]) 
-                queue.push(dep);
-            else
-                throw std::runtime_error("Cycle detected in render graph");
-        }
-        for (auto dep : nodes[idx].WAW) {
-            if (!visited[dep]) 
-                queue.push(dep);
-            else
-                throw std::runtime_error("Cycle detected in render graph");
-        }
-    }*/
-
     //TODO: WAW support needed here. single-writer restriction will be deprecated in phase 3.
     //Kahn sort
     m_executionOrder.clear();
@@ -183,8 +154,43 @@ void O5MRendergraph::compile(void) {
         }
     }
 
-    if (m_executionOrder.size() != m_passDescs.size()) 
-        throw std::runtime_error("Cycle detected in render graph");
+    if (m_executionOrder.size() != m_passDescs.size()) {
+        // Nodes stuck with inDegree > 0 sit on or downstream of a cycle.
+        // Strip sources and sinks repeatedly within the unscheduled set:
+        // whatever survives has both an incoming and an outgoing edge among
+        // the survivors, i.e. it lies on a cycle. Report those pass names.
+        std::vector<uint32_t> remaining;
+        for (uint32_t i = 0; i < m_passDescs.size(); ++i) {
+            if (std::find(m_executionOrder.begin(), m_executionOrder.end(), i) ==
+                m_executionOrder.end()) {
+                remaining.push_back(i);
+            }
+        }
+        bool stripped = true;
+        while (stripped) {
+            stripped = false;
+            std::erase_if(remaining, [&](uint32_t i) {
+                const auto& node = nodes[i];
+                auto inRemaining = [&remaining](uint32_t other) {
+                    return std::find(remaining.begin(), remaining.end(), other) !=
+                           remaining.end();
+                };
+                const bool hasIn = std::any_of(node.RAW.begin(), node.RAW.end(), inRemaining);
+                const bool hasOut = std::any_of(node.WAR.begin(), node.WAR.end(), inRemaining);
+                if (!hasIn || !hasOut) {
+                    stripped = true;
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        std::string names;
+        for (uint32_t i : remaining)
+            names += (names.empty() ? "" : " -> ") + m_passDescs[i].debugName;
+        throw std::runtime_error(
+            "Cycle detected in render graph, passes on cycle: [" + names + "]");
+    }
 
     //unvisited pass culling
     //BST with root passes;
@@ -236,11 +242,15 @@ void O5MRendergraph::compile(void) {
                 switch (k) {
                     case ResourceKind::Buffer:
                         if (!(std::get<BufferInfo>(info.info).usage & toBufferUsage(read.use)))
-                            throw std::runtime_error("Imported resource does not support usage: " + read.handle);
+                            throw std::runtime_error("Imported resource '" + info.debugName +
+                                "' does not support the requested usage (pass '" +
+                                pass.debugName + "')");
                         break;
                     case ResourceKind::Image:
                         if (!(std::get<ImageInfo>(info.info).usage & toImageUsage(read.use)))
-                            throw std::runtime_error("Imported resource does not support usage: " + read.handle);
+                            throw std::runtime_error("Imported resource '" + info.debugName +
+                                "' does not support the requested usage (pass '" +
+                                pass.debugName + "')");
                         break;
                 }
             }
@@ -310,6 +320,10 @@ void O5MRendergraph::compile(void) {
     //initalize physical resources (created resources only; imported ones
     //already have their physical entry from importTexture/importBuffer)
     for (const auto& [handle, resourceInfo] : m_resourceInfos) {
+        //continue when the resource is never used.
+        if(resourceInfo.firstUse == UINT32_MAX) 
+            continue;
+
         if (resourceInfo.source == ResourceSource::Imported)
             continue;
 

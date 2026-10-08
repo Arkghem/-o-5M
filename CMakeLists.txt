@@ -105,6 +105,10 @@ add_executable(resmgr_cycle_test test/resmgr_cycle_test.cpp)
 target_link_libraries(resmgr_cycle_test PRIVATE o5m_core)
 add_test(NAME resmgr_cycle COMMAND resmgr_cycle_test)
 
+add_executable(rendergraph_tests test/rendergraph_tests.cpp)
+target_link_libraries(rendergraph_tests PRIVATE o5m_core)
+add_test(NAME rendergraph COMMAND rendergraph_tests)
+
 # ---------------------------------------------------------------------------
 # Platform-Specific Settings
 # ---------------------------------------------------------------------------
