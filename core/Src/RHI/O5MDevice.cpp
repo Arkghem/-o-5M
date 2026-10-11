@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <stdexcept>
 
 //delete RenderGraph
@@ -22,6 +23,13 @@ static vk::ImageAspectFlags aspectFromFormat(vk::Format fmt) {
         default:
             return vk::ImageAspectFlagBits::eColor;
     }
+}
+
+// currentExtent == 0xFFFFFFFF is the spec sentinel for "the surface has no
+// preferred size, the swapchain decides" -- a sentinel, not a large extent
+static bool surfaceDictatesExtent(const vk::SurfaceCapabilitiesKHR& caps) {
+    constexpr uint32_t kUndefinedExtent = std::numeric_limits<uint32_t>::max();
+    return caps.currentExtent.width != kUndefinedExtent;
 }
 
 O5MDevice::O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,
@@ -266,80 +274,65 @@ O5MDevice::SwapchainBundle O5MDevice::createSwapchain(
     const vk::raii::SurfaceKHR& surface,
     vk::Extent2D requestedExtent
 ) {
-    // present support is a hard requirement for the single-queue design
-    // (raii variant throws on failure and returns Bool32 directly)
-    if (m_physicalDevice.getSurfaceSupportKHR(m_queueFamilyIndex, *surface) != VK_TRUE)
-        throw std::runtime_error("graphics queue family does not support present");
+    vk::SurfaceCapabilitiesKHR caps = m_physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+    std::vector<vk::SurfaceFormatKHR> fmts = m_physicalDevice.getSurfaceFormatsKHR(*surface);
+    std::vector<vk::PresentModeKHR> presentModes = m_physicalDevice.getSurfacePresentModesKHR(*surface);
+    std::vector<vk::QueueFamilyProperties> queueProps = m_physicalDevice.getQueueFamilyProperties();
+    
+    if (m_physicalDevice.getSurfaceSupportKHR(m_queueFamilyIndex, *surface) != vk::True)
+        throw std::runtime_error("O5MDevice: graphics queue family cannot present to surface");
 
-    const auto capabilities = m_physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+    if (!(queueProps[m_queueFamilyIndex].queueFlags &  vk::QueueFlagBits::eGraphics))
+        throw std::runtime_error("...: m_queueFamilyIndex is not a graphics family");
 
-    // format: prefer B8G8R8A8_SRGB (any colorspace), else first available
-    const auto formats = m_physicalDevice.getSurfaceFormatsKHR(*surface);
-    if (formats.empty())
-        throw std::runtime_error("surface has no supported formats");
-    vk::SurfaceFormatKHR chosenFormat = formats.front();
-    for (const auto& f : formats) {
-        if (f.format == vk::Format::eB8G8R8A8Srgb) {
-            chosenFormat = f;
-            break;
-        }
-    }
+    const uint32_t maxImageCount = caps.maxImageCount == 0
+        ? std::numeric_limits<uint32_t>::max()
+        : caps.maxImageCount;
+    const uint32_t imageCount =
+        std::clamp(caps.minImageCount + 1u, caps.minImageCount, maxImageCount);
+    vk::PresentModeKHR mode = vk::PresentModeKHR::eFifo;
 
-    // present mode: FIFO always supported; prefer it (VSync, no tearing)
-    vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
+    if (fmts.empty())
+        throw std::runtime_error("O5MDevice: surface reports no supported formats");
 
-    // extent: clamp the requested size into [min, max]
+    const auto formatIt = std::ranges::find_if(
+            fmts,
+            [](const auto& format) { return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
+    vk::SurfaceFormatKHR format = formatIt == fmts.end() ? fmts[0] : *formatIt;
+
     vk::Extent2D extent = requestedExtent;
-    if (capabilities.currentExtent.width != UINT32_MAX) {
-        extent = capabilities.currentExtent;
+    if (surfaceDictatesExtent(caps)) {
+        extent = caps.currentExtent;
     } else {
         extent.width = std::clamp(extent.width,
-            capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+            caps.minImageExtent.width, caps.maxImageExtent.width);
         extent.height = std::clamp(extent.height,
-            capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+            caps.minImageExtent.height, caps.maxImageExtent.height);
     }
 
-    // image count: one more than the minimum for decent overlap
-    uint32_t imageCount = capabilities.minImageCount + 1;
-    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount)
-        imageCount = capabilities.maxImageCount;
+    vk::SwapchainCreateInfoKHR swapChainCreateInfo{
+        .surface = *surface,
+        .minImageCount = imageCount,
+        .imageFormat = format.format,
+        .imageColorSpace = format.colorSpace,
+        .imageExtent = extent,
+        .imageArrayLayers = 1,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .imageSharingMode = vk::SharingMode::eExclusive,
+        .preTransform = caps.currentTransform,
+        .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+        .presentMode = mode,
+        .clipped = true
+    };
 
-    vk::SwapchainCreateInfoKHR info;
-    info.setSurface(*surface)
-        .setMinImageCount(imageCount)
-        .setImageFormat(chosenFormat.format)
-        .setImageColorSpace(chosenFormat.colorSpace)
-        .setImageExtent(extent)
-        .setImageArrayLayers(1)
-        .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
-        .setImageSharingMode(vk::SharingMode::eExclusive)
-        .setPreTransform(capabilities.currentTransform)
-        .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
-        .setPresentMode(presentMode)
-        .setClipped(VK_TRUE);
+    SwapchainBundle res = {
+        .swapchain = m_device.createSwapchainKHR(swapChainCreateInfo),
+        .format = format.format,
+        .extent = extent,
+    };
 
-    SwapchainBundle bundle;
-    bundle.swapchain = vk::raii::SwapchainKHR(m_device, info);
-    bundle.format = chosenFormat.format;
-    bundle.extent = extent;
-    bundle.images = bundle.swapchain.getImages();
-    bundle.imageCount = static_cast<uint32_t>(bundle.images.size());
+    res.images = res.swapchain.getImages();
+    res.imageCount = static_cast<uint32_t>(res.images.size());
 
-    for (vk::Image image : bundle.images) {
-        vk::ImageViewCreateInfo viewInfo {
-            .image = image,
-            .viewType = vk::ImageViewType::e2D,
-            .format = bundle.format,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            }
-        };
-        bundle.views.emplace_back(m_device, viewInfo);
-    }
-
-    return bundle;
+    return res;
 }

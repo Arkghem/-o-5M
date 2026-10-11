@@ -16,7 +16,6 @@
 
 using namespace O5MRendergraphNS;
 
-//TODO: Input&Output pass need to be clarified in this graph.
 class O5MRendergraph {
 private:
     // per-handle sync state, one slot per ping-pong instance (slot 0 only for

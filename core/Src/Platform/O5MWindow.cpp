@@ -31,7 +31,6 @@ O5MWindow::O5MWindow(const std::string& title, uint32_t width, uint32_t height) 
     if (glfwInit() != GLFW_TRUE)
         throw std::runtime_error("glfwInit failed");
 
-    // NO_API: we are Vulkan-only since legacy_gl retired
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
 
@@ -47,7 +46,6 @@ O5MWindow::O5MWindow(const std::string& title, uint32_t width, uint32_t height) 
     glfwSetScrollCallback(m_window, &O5MWindow::scrollCallback);
     glfwSetFramebufferSizeCallback(m_window, &O5MWindow::framebufferResizeCallback);
 
-    // FPS-camera mode: relative mouse motion, no OS cursor
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 

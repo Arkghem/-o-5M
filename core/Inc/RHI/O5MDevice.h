@@ -8,12 +8,8 @@
 
 class O5MDevice {
 public:
-    // queueFamilyIndex：copyBuffer 等"设备自执行"操作要用的 graphics 队列族，
-    // 由 bootstrap（rhi_verify 的 findGraphicsQueueFamily）选定后传入。
     O5MDevice(vk::raii::PhysicalDevice physicalDevice, vk::raii::Device device,uint32_t queueFamilyIndex);
 
-    // swapchain 物化结果：images 归 swapchain 所有（不归我们），views 归我们。
-    // presentable 全部假定 graphics queue family 同时支持 present（P2 单队列）。
     struct SwapchainBundle {
         vk::raii::SwapchainKHR swapchain = nullptr;
         vk::Format format = vk::Format::eUndefined;
@@ -39,16 +35,15 @@ public:
                 return vk::ImageAspectFlagBits::eColor;
         }
     }
+
 public:
     vk::raii::Device& getDevice(void) { return m_device; }
     const vk::raii::Device& getDevice(void) const { return m_device; }
     vk::raii::PhysicalDevice& getPhysicalDevice(void) { return m_physicalDevice; }
-    vk::raii::Queue& getQueue(void) { return m_queue; } // graphics queue（构造时选定）
+    vk::raii::Queue& getQueue(void) { return m_queue; }
                                                         
     uint32_t findMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties) const;
 
-    // 线性资源：VBO/IBO/UBO/SSBO/Staging 全走这里。
-    // 内部 = createBuffer + getMemoryRequirements + allocateMemory + bindMemory。
     std::pair<vk::raii::Buffer, vk::raii::DeviceMemory>
     createBuffer(
         vk::DeviceSize size,
@@ -61,10 +56,7 @@ public:
                       uint32_t mipLevels, vk::ImageTiling tilling,
                       vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 
-    // swapchain 创建（设备层集中立法）：选 format（偏好 B8G8R8A8_SRGB + Fifo）、
-    // clamp extent、image count = min+1，并为每张 image 建 view。
-    // 传入的 queue family 必须支持 present（内部校验并 throw）。
-    SwapchainBundle createSwapchain(const vk::raii::SurfaceKHR& surface,
+   SwapchainBundle createSwapchain(const vk::raii::SurfaceKHR& surface,
                                     vk::Extent2D requestedExtent);
 
     vk::raii::ImageView createImageView2D(

@@ -74,3 +74,20 @@ void O5MCameraComponent::processMouseScroll(float yOffset) {
         zoom = 1.0f;
     }
 }
+
+
+void O5MCameraComponent::onInitializing(void) {
+
+} 
+
+void O5MCameraComponent::onDestroying(void) {
+
+}
+
+void O5MCameraComponent::update(float deltaTime) {
+
+}
+
+void O5MCameraComponent::render(void) {
+
+}

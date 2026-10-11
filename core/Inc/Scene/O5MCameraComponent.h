@@ -56,6 +56,11 @@ public:
    void processMouseMovement(float xOffset, float yOffset); 
    void processKeyboard(ECameraMovement direction, float deltaTime);
    void processMouseScroll(float yOffset);
+private:
+    void onInitializing(void) override;
+    void onDestroying(void) override;
+    void update(float deltaTime) override;
+    void render(void) override;
 };
 
 #endif // !__O5MCAMERACOMPONENT__H
