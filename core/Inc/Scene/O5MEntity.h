@@ -6,6 +6,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include "Scene/O5MComponent.h"
+
 class O5MComponent;
 class O5MEntity {
 private:
@@ -28,13 +30,50 @@ public:
     void render(void);
 
     template<typename T, typename... Args>
-    T* addComponent(Args&&... args);
+    T* addComponent(Args&&... args) {
+        static_assert(std::is_base_of<O5MComponent, T>::value, "" );
+        size_t typeID = O5MComponent::getTypeID<T>();
+
+        auto it = componentMap.find(typeID);
+        if (it != componentMap.end()) {
+            return static_cast<T*>(it->second);
+        }
+        
+        auto component = std::make_unique<T>(std::forward<Args>(args)...);
+        component->setOwner(this);
+        components.push_back(std::move(component));
+        componentMap[typeID] = components.back().get();
+        return static_cast<T*>(componentMap[typeID]);
+
+
+    }
 
     template<typename T>
-    T* getComponent(void);
+    T* getComponent(void) {
+        size_t typeID = O5MComponent::getTypeID<T>();
+        auto it = componentMap.find(typeID);
+        if (it != componentMap.end()) {
+            return static_cast<T*>(it->second);
+        }
+    }
 
     template<typename T>
-    bool removeComponent(void);
+    bool removeComponent(void) {
+        size_t typeID = O5MComponent::getTypeID<T>();
+        auto it = componentMap.find(typeID);
+        if (it != componentMap.end()) {
+            O5MComponent* compPtr = it->second;
+            componentMap.erase(it);
+
+            for (auto compIt = components.begin(); compIt != components.end(); ++compIt) {
+                if (compIt->get() == compPtr) {
+                    components.erase(compIt);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 };
 
 #endif // !__O5MENTITY__H
