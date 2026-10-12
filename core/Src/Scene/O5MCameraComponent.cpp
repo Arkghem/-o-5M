@@ -1,5 +1,9 @@
 #include "Scene/O5MCameraComponent.h"
 
+void O5MCameraComponent::setAspectRatio(float aspect){
+    m_aspectRatio = aspect;
+}
+
 void O5MCameraComponent::setPerspective(float fov, float aspect, float zNear, float zFar) {
     m_fieldOfView = fov;
     m_aspectRatio = aspect;
@@ -75,9 +79,13 @@ void O5MCameraComponent::processMouseScroll(float yOffset) {
     }
 }
 
-
 void O5MCameraComponent::onInitializing(void) {
-
+    m_position = glm::vec3(0.0f, 0.0f, 3.0f);
+    m_front = glm::vec3(0.0f, 0.0f, -1.0f);
+    m_up = glm::vec3(0.0f, 1.0f, 0.0f);
+    m_right = glm::normalize(glm::cross(m_front, m_worldUp));
+    m_yaw = -90.0f;
+    m_pitch = 0.0f;
 } 
 
 void O5MCameraComponent::onDestroying(void) {
@@ -85,9 +93,5 @@ void O5MCameraComponent::onDestroying(void) {
 }
 
 void O5MCameraComponent::update(float deltaTime) {
-
-}
-
-void O5MCameraComponent::render(void) {
 
 }

@@ -96,3 +96,8 @@ add_test(NAME resmgr_cycle COMMAND resmgr_cycle_test)
 add_executable(rendergraph_tests test/rendergraph_tests.cpp)
 target_link_libraries(rendergraph_tests PRIVATE o5m_core)
 add_test(NAME rendergraph COMMAND rendergraph_tests)
+
+# ECS 验收：O5MWorld 实体身份/槽位回收/延迟销毁/组件生命周期/集中式 dt
+add_executable(ecs_tests test/ecs_tests.cpp)
+target_link_libraries(ecs_tests PRIVATE o5m_core)
+add_test(NAME ecs COMMAND ecs_tests)

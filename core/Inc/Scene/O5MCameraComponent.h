@@ -46,6 +46,7 @@ public:
         RIGHT
     };
 
+    void setAspectRatio(float aspect);
     void setPerspective(float fov, float aspect, float near, float far);
 
     glm::mat4 getViewMatrix(void);
@@ -60,7 +61,6 @@ private:
     void onInitializing(void) override;
     void onDestroying(void) override;
     void update(float deltaTime) override;
-    void render(void) override;
 };
 
 #endif // !__O5MCAMERACOMPONENT__H

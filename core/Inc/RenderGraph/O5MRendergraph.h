@@ -18,9 +18,6 @@ using namespace O5MRendergraphNS;
 
 class O5MRendergraph {
 private:
-    // per-handle sync state, one slot per ping-pong instance (slot 0 only for
-    // non-history resources). Compile-time working memory for the two-round
-    // barrier simulation -- not read at execute time.
     std::unordered_map<ResourceHandle, std::array<SyncScope, 2>> m_stateRecords;
     std::unordered_map<ResourceHandle, ResourceInfo> m_resourceInfos; //only description, no physcial resource, thus we can copy this.
     std::unordered_map<ResourceHandle, PhysicalResource> m_physicalResources; //the place we put the physcial resource in
@@ -39,8 +36,6 @@ public:
     }
 
     void markOutput(ResourceHandle handle) {
-        // Fail fast: only the handle is known here, names live in ResourceInfo
-        // and are unreachable when the lookup misses.
         if (!m_resourceInfos.contains(handle))
             throw std::runtime_error("Output resource handle " + std::to_string(handle) +
                                      " not found in the graph.");

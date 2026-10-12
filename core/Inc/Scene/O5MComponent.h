@@ -29,14 +29,15 @@ public:
     void destroy(void);    
 
     void setOwner(O5MEntity* owner) { this->owner = owner; }
-    O5MEntity* setOwner(void) { return owner; }
+    O5MEntity* getOwner(void) { return owner; }
 
     bool isActive(void) const { return state == EState::Active; }
 protected:
-    virtual void onInitializing(void) = 0;
-    virtual void onDestroying(void) = 0;
-    virtual void update(float deltaTime) = 0;
-    virtual void render(void) = 0;
+    //bad smell here.
+    virtual void onInitializing(void) {};
+    virtual void onDestroying(void) {};
+    virtual void update(float deltaTime) {};
+    virtual void render(void) {};
 
     friend class O5MEntity;
 };
