@@ -1,6 +1,7 @@
 #ifndef __O5MWINDOW__H
 #define __O5MWINDOW__H
 
+#include <bitset>
 #include <memory>
 #include <string>
 #include <utility>
@@ -10,6 +11,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "Events/O5MEvent.h"
+#include "Events/O5MKeyboardEvent.h"
 
 struct GLFWwindow; // opaque
 
@@ -24,13 +26,16 @@ public:
     static std::vector<const char*> getRequiredInstanceExtensions(void);
 
     bool shouldClose(void) const;
+    void requestClose(void);
     void pollEvents(void);
+
+    bool isKeyDown(O5MKeyboardEvent::E_KeyboardKey key) const;
 
     std::pair<uint32_t, uint32_t> getFramebufferSize(void) const;
 
     bool takeResizeFlag(void);
 
-    std::vector<std::unique_ptr<O5MEvent>> drainEvents(void);
+    O5MEventBus& getEventBus(void) { return m_eventBus; }
 
     vk::raii::SurfaceKHR createSurface(const vk::raii::Instance& instance) const;
 
@@ -39,14 +44,17 @@ private:
                             int action, int mods);
     static void cursorCallback(GLFWwindow* window, double x, double y);
     static void scrollCallback(GLFWwindow* window, double x, double y);
+    static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void framebufferResizeCallback(GLFWwindow* window, int w, int h);
 
     void onKey(int key, int action);
     void onMouseMoved(double x, double y);
     void onMouseScrolled(double x, double y);
+    void onMouseButton(int button, int action);
 
     GLFWwindow* m_window = nullptr;
-    std::vector<std::unique_ptr<O5MEvent>> m_eventQueue;
+    O5MEventBus m_eventBus;
+    std::bitset<O5MKeyboardEvent::Key_Count> m_keyDown;
     bool m_resized = false;
     double m_lastMouseX = 0.0;
     double m_lastMouseY = 0.0;

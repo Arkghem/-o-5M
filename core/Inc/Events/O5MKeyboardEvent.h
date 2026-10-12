@@ -5,11 +5,8 @@
 
 class O5MKeyboardEvent : public O5MEvent {
 public:
-    DEFINE_EVENT_TYPE(O5MKeyboardEvent);
-
     enum E_KeyboardEventType {
         Pressed,
-        Holded,
         Released,
         None
     };
@@ -41,7 +38,33 @@ public:
         Key_X,
         Key_Y,
         Key_Z,
-        Key_None
+        Key_0,
+        Key_1,
+        Key_2,
+        Key_3,
+        Key_4,
+        Key_5,
+        Key_6,
+        Key_7,
+        Key_8,
+        Key_9,
+        Key_Escape,
+        Key_Space,
+        Key_Enter,
+        Key_Tab,
+        Key_Backspace,
+        Key_Up,
+        Key_Down,
+        Key_Left,
+        Key_Right,
+        Key_LeftShift,
+        Key_RightShift,
+        Key_LeftControl,
+        Key_RightControl,
+        Key_LeftAlt,
+        Key_RightAlt,
+        Key_None,
+        Key_Count = Key_None
     };
 
 private:

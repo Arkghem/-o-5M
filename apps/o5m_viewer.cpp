@@ -40,6 +40,8 @@
 #include "RHI/O5MPipeline.h"
 #include "RHI/O5MSwapchain.h"
 #include "RenderGraph/O5MRendergraph.h"
+#include "Events/O5MKeyboardEvent.h"
+#include "Events/O5MMouseEvent.h"
 #include "Platform/O5MWindow.h"
 #include "Resources/O5MShaderResource.h"
 
@@ -54,16 +56,23 @@ struct CameraUBO {
 };
 
 // TODO(user) [3]：FPS 相机。骨架只提供身份矩阵占位，消费事件 + 更新数学是你的部分：
-//   - O5MMouseEvent 的 x/y 是相对位移（cursor disabled 模式）→ yaw/pitch
-//   - O5MKeyboardEvent Pressed（W/A/S/D/Q/E）→ 移动，速度乘 dt
+//   - onMouseMoved 的 x/y 是相对位移（cursor disabled 模式）→ yaw/pitch
+//   - onKey 的 Pressed/Released 是**边沿**：自己在相机里记键位状态，
+//     在 onUpdate 里按状态算移动（不要用 Pressed 直接算位移——那是帧率/重复率相关）
 //   - aspect 从 swapchain extent 来，resize 后必须重算 proj
 struct O5MFpsCamera {
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 proj = glm::mat4(1.0f);
     glm::vec3 position = glm::vec3(0.0f, 0.0f, 2.0f);
 
-    void onEvent(const O5MEvent& event) {
-        (void)event; // TODO(user): dispatch Keyboard/Mouse, integrate movement
+    void onKey(const O5MKeyboardEvent& event) {
+        (void)event; // TODO(user): 边沿 → 自己的键位状态
+    }
+    void onMouseMoved(const O5MMouseMovedEvent& event) {
+        (void)event; // TODO(user): 相对位移 → 累积 yaw/pitch
+    }
+    void onMouseScrolled(const O5MMouseScrolledEvent& event) {
+        (void)event; // TODO(user): 滚轮调 fov（可选）
     }
     void onUpdate(float dt, float aspect) {
         (void)dt; (void)aspect;
@@ -311,6 +320,28 @@ int main(int argc, char** argv) {
         auto fpsWindowStart = lastTime;
         uint32_t fpsCounter = 0;
 
+        // 订阅在进入循环前一次性注册；事件在 pollEvents() 内同步派发。
+        // 退出决策留在应用层：ESC 不再是平台层的特权。
+        O5MEventBus& eventBus = window.getEventBus();
+        eventBus.addEvent<O5MKeyboardEvent>([&window](const O5MEvent& event) {
+            const auto& key = static_cast<const O5MKeyboardEvent&>(event);
+            if (key.getKey() == O5MKeyboardEvent::Key_Escape &&
+                key.getEventType() == O5MKeyboardEvent::Pressed)
+                window.requestClose();
+        });
+
+        // 相机订阅：总线按类型分桶，所以「类型 → 具体回调」的转换只需在订阅处写一次，
+        // 相机内部因此不需要任何类型判断。TODO(user) [3] 消费即这四行。
+        eventBus.addEvent<O5MKeyboardEvent>([&camera](const O5MEvent& event) {
+            camera.onKey(static_cast<const O5MKeyboardEvent&>(event));
+        });
+        eventBus.addEvent<O5MMouseMovedEvent>([&camera](const O5MEvent& event) {
+            camera.onMouseMoved(static_cast<const O5MMouseMovedEvent&>(event));
+        });
+        eventBus.addEvent<O5MMouseScrolledEvent>([&camera](const O5MEvent& event) {
+            camera.onMouseScrolled(static_cast<const O5MMouseScrolledEvent&>(event));
+        });
+
         std::cout << "[ok] viewer running (v0 single-slot sync) -- ESC to quit\n";
 
         while (!window.shouldClose() && frameIndex < smokeFrames) {
@@ -320,9 +351,6 @@ int main(int argc, char** argv) {
             const float dt = std::chrono::duration<float>(now - lastTime).count();
             lastTime = now;
 
-            // 事件 → 相机（TODO(user) [3] 消费）
-            for (auto& event : window.drainEvents())
-                camera.onEvent(*event);
             const float aspect =
                 static_cast<float>(swapchain.getExtent().width) /
                 static_cast<float>(swapchain.getExtent().height);
