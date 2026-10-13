@@ -65,6 +65,12 @@ add_subdirectory(core)
 add_executable(o5m_viewer apps/o5m_viewer.cpp)
 target_link_libraries(o5m_viewer PRIVATE o5m_core)
 
+# Shader 源码在 shaders/ 下按 stage 分目录，运行时 shaderc 编译，无离线步骤。
+# 绝对路径编进去，这样 app 从任何工作目录启动都能找到它们；同时该路径会作为
+# shaderc 的 input_file_name，成为 includer 解析相对 #include 的依据。
+target_compile_definitions(o5m_viewer PRIVATE
+    O5M_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+
 # ---------------------------------------------------------------------------
 # RHI Verification Executable（离屏回归测试，永久保留）
 # ---------------------------------------------------------------------------

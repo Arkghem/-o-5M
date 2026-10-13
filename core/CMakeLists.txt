@@ -15,6 +15,8 @@
 #   Homebrew (macOS): brew install glm
 find_package(glm REQUIRED)
 
+add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
 # ---------------------------------------------------------------------------
 # Library target
 # ---------------------------------------------------------------------------

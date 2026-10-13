@@ -7,7 +7,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Events/O5MKeyboardEvent.h"
-#include "Events/O5MMouseEvent.h"
 #include "Scene/O5MComponent.h"
 
 class O5MCameraComponent : public O5MComponent {

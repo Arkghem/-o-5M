@@ -29,8 +29,8 @@
 //      但没人 wait 它；直接复用会违反 VUID-vkAcquireNextImageKHR-semaphore-01779
 //      （该 semaphore 必须 unsignaled）。rebuild 后整批重建 imageAvailable。
 //
-// 仍未实现（用户学习点）：kViewerVert 里的 viewProj 应用 + Vulkan 投影适配
-//   （Y 翻转、深度 0..1）——见文件内 TODO(user) [4]。
+// 仍未实现（用户学习点）：shader 里的 viewProj 应用 + Vulkan 投影适配
+//   （Y 翻转、深度 0..1）——见 shaders/fullscreen/viewer.vert 的 TODO(user) [4]。
 //
 // 退出码：0 = 正常退出（关窗或 --frames 到数）。
 
@@ -41,8 +41,11 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -73,36 +76,145 @@ struct CameraUBO {
 // 相机：[3] 已完成 —— 不新建类，直接用 core/Inc/Scene/O5MCameraComponent.h
 // （完整 FPS 相机），接线在下面的订阅区 + world.update(dt) 驱动其 update()。
 
-// ---- GLSL ----
-// TODO(user) [4]（P2 唯一剩下的 shader 学习点）：vertex 目前是 NDC fullscreen
-// triangle passthrough。把它换成世界空间三角形并应用 proj * view，让相机运动
-// 在画面上可见；同时完成 Vulkan 投影适配——Y 翻转 + 深度 0..1
-// （GLM_FORCE_DEPTH_ZERO_TO_ONE），即设计文档说的"倒三角坑"。
-// UBO 已经在写了（见帧循环 (e) 段），shader 里 binding 0 直接可用。
-const char* kViewerVert = R"GLSL(
-#version 450
-layout(location = 0) out vec2 vUV;
-layout(set = 0, binding = 0) uniform Camera {
-    mat4 view;
-    mat4 proj;
-    vec4 camPos;
-    vec4 params;
-} camera;
-void main() {
-    vec2 pos = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));
-    vUV = pos;
-    gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
-}
-)GLSL";
+// ---- GLSL：已经落盘到 shaders/，运行时读入 + shaderc 编译 ----
+// TODO(user) [4] 现在在 shaders/fullscreen/viewer.vert 里，不在本文件。
+#ifndef O5M_SHADER_DIR
+#define O5M_SHADER_DIR "shaders"   // 兜底：CMake 未注入时按相对路径找
+#endif
 
-const char* kViewerFrag = R"GLSL(
-#version 450
-layout(location = 0) in vec2 vUV;
-layout(location = 0) out vec4 outColor;
-void main() {
-    outColor = vec4(vUV, 0.25, 1.0);
+// Shader 源文件读成 NUL 结尾的字符串。O5MResource::setData 是非持有的
+// （只存裸指针），而 O5MShaderResource::doLoad 用 std::string(casted) 当
+// C 串读——所以返回的 string 必须活过 load()，调用点要留意作用域。
+bool tryReadFile(const std::string& path, std::string& out) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return false;
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    out = buf.str();
+    return true;
 }
-)GLSL";
+
+bool fileExists(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return static_cast<bool>(in);
+}
+
+std::string readTextFile(const std::string& path) {
+    std::string out;
+    if (!tryReadFile(path, out))
+        throw std::runtime_error("cannot open shader file: " + path);
+    return out;
+}
+
+std::string dirName(const std::string& path) {
+    const size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+}
+
+// ---------------------------------------------------------------------------
+// 极简 #include 展开器 —— **临时方案，P4 换成 shaderc SetIncluder**
+// ---------------------------------------------------------------------------
+// 已实测的两条局限（见 docs/phase2-exercises.md）：
+//   ① 不参与条件编译：被 #if / #ifdef 排除掉的分支里的 #include 照样会被展开。
+//      glslang 是"先算条件、再解析 include"（实测：包在 #ifdef 未定义宏里的
+//      #include 不会报错，宏一旦定义就在对应行报错），文本拼接做不到这点。
+//   ② 报错的文件名恒为主 shader：整份拼接结果只有一个 shaderc 源串，而 GLSL 的
+//      #line 只能改行号或源串序号，无法指定文件名。
+// 缓解②：记账时用**单参数** `#line N`（实测报错形如 "<主shader路径>:100"，
+// 文件名与行号都在）。于是主 shader 自身的报错行号完全准确，只有被 include
+// 进来的片段会把行号显示成主 shader 的名字。
+//
+// 换成 includer 时只需替换本函数，调用点不动。
+std::string expandIncludes(const std::string& source,
+                           const std::string& sourceDir,
+                           const std::vector<std::string>& includeDirs,
+                           std::vector<std::string>& includeStack,
+                           uint32_t depth) {
+    constexpr uint32_t kMaxIncludeDepth = 16;
+    if (depth > kMaxIncludeDepth)
+        throw std::runtime_error("shader #include nested too deeply");
+
+    std::string out;
+    size_t pos = 0;
+    uint32_t lineNo = 0;
+
+    while (pos < source.size()) {
+        size_t eol = source.find('\n', pos);
+        if (eol == std::string::npos)
+            eol = source.size();
+        const std::string line = source.substr(pos, eol - pos);
+        pos = eol + 1;
+        ++lineNo;
+
+        // 形如: [空白] # [空白] include [空白] "name" | <name>
+        bool isInclude = false;
+        bool angled = false;
+        std::string name;
+        size_t p = line.find_first_not_of(" \t");
+        if (p != std::string::npos && line[p] == '#') {
+            p = line.find_first_not_of(" \t", p + 1);
+            if (p != std::string::npos && line.compare(p, 7, "include") == 0) {
+                p = line.find_first_not_of(" \t", p + 7);
+                if (p != std::string::npos && (line[p] == '"' || line[p] == '<')) {
+                    angled = (line[p] == '<');
+                    const size_t close = line.find(angled ? '>' : '"', p + 1);
+                    if (close == std::string::npos)
+                        throw std::runtime_error("malformed #include: " + line);
+                    name = line.substr(p + 1, close - p - 1);
+                    isInclude = true;
+                }
+            }
+        }
+
+        if (!isInclude) {
+            out += line;
+            out += '\n';
+            continue;
+        }
+
+        // 解析目标：引号形式先找 including 文件所在目录，再回退 includeDirs；
+        // 尖括号形式只找 includeDirs。
+        std::string resolved;
+        bool found = false;
+        if (!angled) {
+            std::string candidate = sourceDir + "/" + name;
+            if (fileExists(candidate)) {
+                resolved = candidate;
+                found = true;
+            }
+        }
+        if (!found) {
+            for (const std::string& dir : includeDirs) {
+                std::string candidate = dir + "/" + name;
+                if (fileExists(candidate)) {
+                    resolved = candidate;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found)
+            throw std::runtime_error("shader #include not found: \"" + name +
+                                     "\" (from " + sourceDir + ", line " +
+                                     std::to_string(lineNo) + ")");
+
+        if (std::find(includeStack.begin(), includeStack.end(), resolved) !=
+            includeStack.end())
+            throw std::runtime_error("circular shader #include: " + resolved);
+
+        includeStack.push_back(resolved);
+        // 单参数 #line：让被包含文件自己的行号从 1 开始
+        out += "#line 1\n";
+        out += expandIncludes(readTextFile(resolved), dirName(resolved),
+                              includeDirs, includeStack, depth + 1);
+        includeStack.pop_back();
+        // 恢复主文件的记账：下一行就是原文件的 lineNo + 1
+        out += "#line " + std::to_string(lineNo + 1) + "\n";
+    }
+
+    return out;
+}
 
 uint32_t findGraphicsQueueFamily(const vk::raii::PhysicalDevice& physicalDevice) {
     auto props = physicalDevice.getQueueFamilyProperties();
@@ -119,10 +231,16 @@ uint32_t findGraphicsQueueFamily(const vk::raii::PhysicalDevice& physicalDevice)
 int main(int argc, char** argv) {
     try {
         // --frames N: unattended smoke test
+        // --rebuild-every N: 每 N 帧强制走一次 swapchain 重建路径。真实拖拽
+        //   resize 无法无人值守触发（要 GLFW handle，属 core/），而这条路径
+        //   在修掉 views 崩溃前从未被执行过——当年两个 bug 就是这么漏的。
         uint32_t smokeFrames = UINT32_MAX;
+        uint32_t rebuildEvery = 0;
         for (int i = 1; i < argc; ++i) {
             if (std::string_view(argv[i]) == "--frames" && i + 1 < argc)
                 smokeFrames = static_cast<uint32_t>(std::atoi(argv[++i]));
+            else if (std::string_view(argv[i]) == "--rebuild-every" && i + 1 < argc)
+                rebuildEvery = static_cast<uint32_t>(std::atoi(argv[++i]));
         }
 
         // unbuffered stdout so piped smoke-test logs stay live
@@ -259,11 +377,34 @@ int main(int argc, char** argv) {
                     vk::MemoryPropertyFlagBits::eHostCoherent));
         }
         // ---- 6. 与 image 无关的长寿对象：shader / pipeline / descriptor ----
-        O5MShaderResource vsRes("viewer.vert", vk::ShaderStageFlagBits::eVertex, device);
-        O5MShaderResource fsRes("viewer.frag", vk::ShaderStageFlagBits::eFragment, device);
-        vsRes.setData(const_cast<char*>(kViewerVert), std::strlen(kViewerVert) + 1);
-        fsRes.setData(const_cast<char*>(kViewerFrag), std::strlen(kViewerFrag) + 1);
+        // Shader 从磁盘读。资源名用**绝对路径**：它经 doLoad →
+        // compileGLSL(debugName) 变成 shaderc 的 input_file_name。用上
+        // includer 之后它会作为 requesting_source 传给 include 回调，所以
+        // 引擎侧不需要任何"shader 根目录"新 API。
+        const std::string shaderDir = O5M_SHADER_DIR;
+        // 尖括号 / 回退查找的根目录：让 #include "common/camera.glsl" 这类
+        // 从 shaders/ 起算的写法在任何子目录里都成立
+        const std::vector<std::string> includeDirs = { shaderDir };
+        const std::string vertPath = shaderDir + "/fullscreen/viewer.vert";
+        const std::string fragPath = shaderDir + "/fullscreen/viewer.frag";
+
+        // 下面两个 string 必须活到 load() 之后（setData 非持有），故放在此处。
+        // expandIncludes 是临时方案，换成 shaderc includer 时只替换它。
+        std::vector<std::string> includeStack;
+        std::string vertSrc = expandIncludes(readTextFile(vertPath),
+                                             dirName(vertPath), includeDirs,
+                                             includeStack, 0);
+        includeStack.clear();
+        std::string fragSrc = expandIncludes(readTextFile(fragPath),
+                                             dirName(fragPath), includeDirs,
+                                             includeStack, 0);
+
+        O5MShaderResource vsRes(vertPath, vk::ShaderStageFlagBits::eVertex, device);
+        O5MShaderResource fsRes(fragPath, vk::ShaderStageFlagBits::eFragment, device);
+        vsRes.setData(vertSrc.data(), vertSrc.size() + 1);
+        fsRes.setData(fragSrc.data(), fragSrc.size() + 1);
         vsRes.load(); fsRes.load();
+        std::cout << "[ok] shaders compiled (" << shaderDir << ")\n";
 
         const std::vector<vk::DescriptorSetLayoutBinding> bindings = {
             { 0, vk::DescriptorType::eUniformBuffer, 1,
@@ -353,6 +494,7 @@ int main(int argc, char** argv) {
         world.init();
 
         uint32_t frameIndex = 0;
+        uint32_t sweep = 0;   // 循环迭代计数（frameIndex 在 continue 路径上不前进）
         float elapsedSeconds = 0.0f;
         auto lastTime = std::chrono::high_resolution_clock::now();
         auto fpsWindowStart = lastTime;
@@ -394,11 +536,17 @@ int main(int argc, char** argv) {
         // rebuild() 内部已 waitIdle，此刻销毁/重建是安全的。
         auto rebuildSwapchain = [&]() {
             auto [w, h] = window.getFramebufferSize();
-            swapchain.rebuild({ w, h });
+            // 最小化时 framebuffer 可能是 0 尺寸：退回旧 extent，绝不让
+            // vkCreateSwapchainKHR 拿到 0（VUID-VkSwapchainCreateInfoKHR-imageExtent-01689）。
+            // 注意这里不能"跳过重建"——三条调用路径都依赖两池被换新。
+            const vk::Extent2D extent = (w == 0 || h == 0)
+                ? swapchain.getExtent() : vk::Extent2D{ w, h };
+            swapchain.rebuild(extent);
             renderFinishedPool = makeRenderFinished();
             for (auto& sem : imageAvailable)
                 sem = vk::raii::Semaphore(device.getDevice(), semInfo);
-            std::cout << "[ok] swapchain rebuilt " << w << "x" << h << "\n";
+            std::cout << "[ok] swapchain rebuilt " << extent.width << "x"
+                      << extent.height << "\n";
         };
 
         std::cout << "[ok] viewer running (frames-in-flight=" << kInFlight
@@ -423,10 +571,12 @@ int main(int argc, char** argv) {
             const uint32_t frame = frameIndex % kInFlight;
 
             // ---- (a) 窗口 resize 优先拦掉：不 acquire、不碰任何信号量 ----
-            // 最小化时 framebuffer 可能给出 0 尺寸，那会造出非法 swapchain
-            if (window.takeResizeFlag()) {
-                auto [w, h] = window.getFramebufferSize();
-                if (w == 0 || h == 0) continue;
+            // forceRebuild 必须用 sweep（每轮循环都自增），不能用 frameIndex——
+            // continue 路径上 frameIndex 不前进，电平触发会无限重建。
+            ++sweep;
+            const bool forceRebuild =
+                rebuildEvery != 0 && sweep % rebuildEvery == 0;
+            if (window.takeResizeFlag() || forceRebuild) {
                 rebuildSwapchain();
                 continue;   // fence 未 reset，仍 signaled → 下轮 wait 立即通过
             }
