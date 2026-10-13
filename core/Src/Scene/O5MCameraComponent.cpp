@@ -35,7 +35,17 @@ void O5MCameraComponent::updateCameraVectors(void) {
     m_up = glm::normalize(glm::cross(m_right, m_front));
 }
 
-void O5MCameraComponent::processKeyboard(O5MCameraComponent::ECameraMovement direction, float deltaTime) {
+void O5MCameraComponent::processKey(O5MKeyboardEvent::E_KeyboardKey key, bool isDown) {
+    if (key == O5MKeyboardEvent::Key_None)
+        return;
+    if (isDown)
+        m_keyDown.set(static_cast<size_t>(key));
+    else
+        m_keyDown.reset(static_cast<size_t>(key));
+}
+
+//I think this should be done in Transform component.
+void O5MCameraComponent::move(O5MCameraComponent::ECameraMovement direction, float deltaTime) {
     switch (direction) {
         case O5MCameraComponent::FORWARD:
             m_position += m_front * deltaTime;
@@ -88,10 +98,14 @@ void O5MCameraComponent::onInitializing(void) {
     m_pitch = 0.0f;
 } 
 
-void O5MCameraComponent::onDestroying(void) {
-
-}
-
 void O5MCameraComponent::update(float deltaTime) {
+    const auto held = [this](O5MKeyboardEvent::E_KeyboardKey key) {
+        return key != O5MKeyboardEvent::Key_None &&
+               m_keyDown.test(static_cast<size_t>(key));
+    };
 
+    if (held(O5MKeyboardEvent::Key_W)) move(FORWARD, deltaTime);
+    if (held(O5MKeyboardEvent::Key_S)) move(BACKWARD, deltaTime);
+    if (held(O5MKeyboardEvent::Key_A)) move(LEFT, deltaTime);
+    if (held(O5MKeyboardEvent::Key_D)) move(RIGHT, deltaTime);
 }

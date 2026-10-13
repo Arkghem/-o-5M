@@ -60,7 +60,7 @@ public:
                                     vk::Extent2D requestedExtent);
 
     vk::raii::ImageView createImageView2D(
-        const vk::raii::Image& image,
+        const vk::Image image,
         vk::Format format,
         vk::ImageAspectFlags aspect = {}); 
 

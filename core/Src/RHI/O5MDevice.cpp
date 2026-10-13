@@ -131,7 +131,7 @@ O5MDevice::createImage2D(vk::Format format, vk::Extent2D extent,
 }
 
 vk::raii::ImageView O5MDevice::createImageView2D(
-    const vk::raii::Image& image,
+    const vk::Image image,
     vk::Format format,
     vk::ImageAspectFlags aspectFlags
 ) {
@@ -333,6 +333,9 @@ O5MDevice::SwapchainBundle O5MDevice::createSwapchain(
 
     res.images = res.swapchain.getImages();
     res.imageCount = static_cast<uint32_t>(res.images.size());
+
+    for (auto image : res.images) 
+        res.views.emplace_back(createImageView2D(image, res.format, vk::ImageAspectFlagBits::eColor));
 
     return res;
 }

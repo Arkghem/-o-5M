@@ -155,10 +155,6 @@ void O5MRendergraph::compile(void) {
     }
 
     if (m_executionOrder.size() != m_passDescs.size()) {
-        // Nodes stuck with inDegree > 0 sit on or downstream of a cycle.
-        // Strip sources and sinks repeatedly within the unscheduled set:
-        // whatever survives has both an incoming and an outgoing edge among
-        // the survivors, i.e. it lies on a cycle. Report those pass names.
         std::vector<uint32_t> remaining;
         for (uint32_t i = 0; i < m_passDescs.size(); ++i) {
             if (std::find(m_executionOrder.begin(), m_executionOrder.end(), i) ==

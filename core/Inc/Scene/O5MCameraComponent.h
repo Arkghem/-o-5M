@@ -1,10 +1,14 @@
 #ifndef __O5MCAMERACOMPONENT__H
 #define __O5MCAMERACOMPONENT__H
 
+#include <bitset>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include "Scene/O5MComponent.h"
 
+#include "Events/O5MKeyboardEvent.h"
+#include "Events/O5MMouseEvent.h"
+#include "Scene/O5MComponent.h"
 
 class O5MCameraComponent : public O5MComponent {
 public:
@@ -30,14 +34,13 @@ private:
     glm::vec3 m_right;
     glm::vec3 m_worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    glm::vec3 clipPosLT;
-    glm::vec3 clipPosLB;
-    glm::vec3 clipPosRT;
-    glm::vec3 clipPosRB;
-    
     glm::mat4 m_viewMatrix = glm::mat4(1.0f);
     glm::mat4 m_projectionMatrix = glm::mat4(1.0f);
-    bool projectionDirty = true; 
+    bool projectionDirty = true;
+
+    // Level state, driven by key edges from the event bus. Movement is
+    // integrated once per frame from this, never from the edges themselves.
+    std::bitset<O5MKeyboardEvent::Key_Count> m_keyDown;
 public:
     enum ECameraMovement {
         FORWARD,
@@ -53,13 +56,13 @@ public:
     glm::mat4 getProjectionMatrix(void);
 
    void updateCameraVectors(void);
+   void move(ECameraMovement direction, float deltaTime);
 
+   void processKey(O5MKeyboardEvent::E_KeyboardKey key, bool isDown);
    void processMouseMovement(float xOffset, float yOffset); 
-   void processKeyboard(ECameraMovement direction, float deltaTime);
    void processMouseScroll(float yOffset);
 private:
     void onInitializing(void) override;
-    void onDestroying(void) override;
     void update(float deltaTime) override;
 };
 
