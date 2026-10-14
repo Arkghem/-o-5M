@@ -15,7 +15,8 @@
 #   Homebrew (macOS): brew install glm
 find_package(glm REQUIRED)
 
-add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
+# GLM_FORCE_DEPTH_ZERO_TO_ONE is defined globally in the ROOT CMakeLists so
+# that core/ and apps/ TUs share one glm configuration (ODR consistency).
 
 # ---------------------------------------------------------------------------
 # Library target
@@ -49,11 +50,8 @@ endif()
 if(NOT glfw3_FOUND AND NOT glfw_FOUND)
     message(FATAL_ERROR "GLFW3 not found (brew install glfw / vcpkg install glfw3)")
 endif()
-if(glfw3_FOUND)
-    target_link_libraries(o5m_core PRIVATE glfw)
-else()
-    target_link_libraries(o5m_core PRIVATE glfw)
-endif()
+# Both package names create the same imported target `glfw`.
+target_link_libraries(o5m_core PRIVATE glfw)
 
 # Vulkan — O5MTextureResource.h stores a vk::Image handle in a public header,
 # so the Vulkan loader is a PUBLIC dependency: any consumer of core/Inc must

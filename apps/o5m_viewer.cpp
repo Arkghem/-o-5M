@@ -29,8 +29,9 @@
 //      但没人 wait 它；直接复用会违反 VUID-vkAcquireNextImageKHR-semaphore-01779
 //      （该 semaphore 必须 unsignaled）。rebuild 后整批重建 imageAvailable。
 //
-// 仍未实现（用户学习点）：shader 里的 viewProj 应用 + Vulkan 投影适配
-//   （Y 翻转、深度 0..1）——见 shaders/fullscreen/viewer.vert 的 TODO(user) [4]。
+// 用户学习点 [4]（shader 里 viewProj 应用 + Vulkan 投影适配）已完成：
+//   Y 翻转折进 C++ 投影矩阵（O5MCameraComponent.cpp），深度 0..1 由根 CMake
+//   全局的 GLM_FORCE_DEPTH_ZERO_TO_ONE 保证。
 //
 // 退出码：0 = 正常退出（关窗或 --frames 到数）。
 
@@ -77,7 +78,6 @@ struct CameraUBO {
 // （完整 FPS 相机），接线在下面的订阅区 + world.update(dt) 驱动其 update()。
 
 // ---- GLSL：已经落盘到 shaders/，运行时读入 + shaderc 编译 ----
-// TODO(user) [4] 现在在 shaders/fullscreen/viewer.vert 里，不在本文件。
 #ifndef O5M_SHADER_DIR
 #define O5M_SHADER_DIR "shaders"   // 兜底：CMake 未注入时按相对路径找
 #endif

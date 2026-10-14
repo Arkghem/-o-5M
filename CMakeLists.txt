@@ -14,6 +14,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ---------------------------------------------------------------------------
+# glm configuration — MUST apply to every TU in the tree (core + apps).
+# GLM_FORCE_DEPTH_ZERO_TO_ONE changes glm::perspective's depth range to
+# Vulkan's [0, 1]; defining it only in core/ would give apps/ TUs a silently
+# different glm configuration (ODR divergence). Kept global on purpose.
+# ---------------------------------------------------------------------------
+add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
+# ---------------------------------------------------------------------------
 # Vendored Third-Party Dependencies
 # ---------------------------------------------------------------------------
 add_subdirectory(third_party)

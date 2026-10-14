@@ -8,18 +8,11 @@
 // this replaces is parked at shaders/geometry/object.vert.
 //
 // ---------------------------------------------------------------------------
-// TODO(user) [4] -- two things are deliberately left undone:
-//
-//   1. Y FLIP. Vulkan NDC has +Y pointing DOWN, while glm::perspective()
-//      follows the OpenGL convention with +Y up. As written, the image comes
-//      out upside down. Run it and see. Fix it either here (one line) or by
-//      folding it into the projection on the C++ side -- both are defensible,
-//      pick one and be able to say why.
-//
-//   2. DEPTH RANGE. glm::perspective() emits the OpenGL [-1, 1] depth range
-//      unless GLM_FORCE_DEPTH_ZERO_TO_ONE is defined before any glm header is
-//      included. Invisible today (there is no depth attachment yet), but P3
-//      needs it -- see docs/phase2-exercises.md.
+// Vulkan projection adaptation (P2 exercise [4], resolved):
+//   - Y flip is folded into the projection on the C++ side
+//     (O5MCameraComponent.cpp: m_projectionMatrix[1][1] *= -1.0f).
+//   - Depth range [0, 1] comes from GLM_FORCE_DEPTH_ZERO_TO_ONE, defined
+//     globally in the root CMakeLists so every TU sees the same glm config.
 // ---------------------------------------------------------------------------
 
 layout(location = 0) out vec2 vUV;
