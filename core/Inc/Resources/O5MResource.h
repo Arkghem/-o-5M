@@ -5,7 +5,6 @@
 #include <atomic>
 #include <string>
 
-
 class O5MResource {
 private:
     static inline std::atomic<uint64_t> nextId = 1;

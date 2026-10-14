@@ -1,114 +1,383 @@
 # o5m-render
 
-一个以学习为目的、从零搭建的 Vulkan 渲染器。不追求工业级完备，而是把现代渲染引擎的每一层（RHI、Render Graph、资源管理、ECS 场景组织）亲手实现一遍，最终目标是跑通一套 PBR 渲染管线。
+A learning-first Vulkan renderer, written from scratch.
 
-> 项目从 OpenGL 起步，后整体迁移到 Vulkan RAII（`vulkan_raii.hpp`），macOS 下经 MoltenVK 验证可跑。
+The goal is not to ship an industrial-strength engine, but to implement every layer of a
+modern renderer by hand — RHI, render graph, resource management, ECS scene organization —
+and to end up with a PBR pipeline whose every line is understood.
+
+> The project started on OpenGL with a hand-rolled RHI layer, then migrated wholesale to
+> Vulkan RAII (`vulkan_raii.hpp`). It is developed and verified on macOS through MoltenVK.
+
+**Status:** Phase 0/1/2 are complete; **Phase 3 — geometry pipeline, depth/stencil,
+descriptor allocator and ECS wiring — is in progress** on the `Phase_Engine` branch.
+Today `o5m_viewer` opens a real-time window, drives an FPS camera from keyboard/mouse and
+renders through the render graph with two frames in flight. The geometry path is what
+Phase 3 is building: there is no vertex buffer, index buffer or depth attachment in the
+viewer yet (the current demo generates its triangle from `gl_VertexIndex`), and the mesh
+and culling components are still placeholders waiting to be wired into the ECS.
+
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Build](#build)
+- [Running](#running)
+- [Roadmap](#roadmap)
+- [Design notes and non-goals](#design-notes-and-non-goals)
+- [Third-party libraries](#third-party-libraries)
+- [Platform notes](#platform-notes)
+- [License](#license)
+
+---
 
 ## Features
 
-### RHI 层
+### RHI (`core/Inc/RHI`)
 
-- **设备层集中立法**：`vkCreateBuffer / vkCreateImage / vkAllocateMemory` 只允许出现在 `O5MDevice.cpp` 一个文件里，全引擎 GPU 对象创建与内存分配的唯一出口
-- **内存分配账本**：追踪 `maxMemoryAllocationCount`（多数驱动约 4096）天花板，为将来迁移 VMA sub-allocation 留验收标准
-- **Dynamic Rendering**：使用 Vulkan 1.3 动态渲染（1.2 走 `VK_KHR_dynamic_rendering` 扩展），不使用 legacy RenderPass
-- **Runtime Shader 编译**：GLSL 源码经 shaderc 在运行时编译为 SPIR-V，无离线编译步骤
+- **Device-layer legislation.** `vkCreateBuffer`, `vkCreateImage` and `vkAllocateMemory`
+  are allowed to appear in exactly one file, `core/Src/RHI/O5MDevice.cpp`. Every GPU object
+  and every byte of device memory in the engine is created through `O5MDevice`, which makes
+  memory accounting and future allocator work tractable.
+- **Allocation ledger.** Allocation count is tracked against the reported
+  `maxMemoryAllocationCount` (≈4096 on most drivers) and the ceiling is treated as an
+  explicit acceptance criterion for a later VMA/sub-allocation migration. For now each
+  resource owns its own `vkAllocateMemory` — a deliberate simplification.
+- **Dynamic rendering only.** `vkCmdBeginRendering` / `vkCmdEndRendering` through
+  `VK_KHR_dynamic_rendering` (enabled on a 1.2 instance, which is what MoltenVK exposes),
+  with `vk::raii` handles throughout; there is no legacy `VkRenderPass` / `VkFramebuffer`
+  anywhere in the tree.
+- **`O5MSwapchain`.** Creation (FIFO present, `minImageCount + 1` images, sRGB format
+  preferred), `acquire()` / `present()` with out-of-date and suboptimal handling, and a
+  blocking `rebuild()` for resizes; owns the image views aligned with the acquired image
+  index.
+- **`O5MPipeline`.** A graphics pipeline plus dynamic-rendering `begin()` / `end()` and
+  descriptor-set binding. Parameterization (vertex input, depth/stencil state, MRT,
+  push constants) is Phase 3 work in flight.
 
-### Render Graph
+### Render graph (`core/Inc/RenderGraph`)
 
-- 声明式资源：`addResource` / `addBufferResource` 描述 Image / Buffer，不绑定具体 Vulkan 对象
-- 声明式 Pass：每个 Pass 只声明 `inputs` / `outputs` 与录制 lambda
-- `compile()` 依据读写依赖推导执行顺序，pass 间用 semaphore 做 signal/wait 同步
-- `execute()` 支持 fence 等待，是 frames-in-flight 的雏形
-- HOST_VISIBLE（UBO 直写）与 DEVICE_LOCAL（staging 上传）两种 buffer 策略
+- **Declarations and physical resources are separate.** A pass only declares what it reads
+  and writes plus a recording lambda; `compile()` derives execution order, barriers,
+  image layouts, memory and lifetime from those declarations.
+- **Typed usage declarations are the single source of truth.** `TexRead::Sampled`,
+  `TexWrite::ColorClear` / `Depth` / `Present`, `TexRW::Storage`, `BufRead::Uniform` /
+  `VertexIndex`, `BufWrite::TransferDst`, … map to stage masks, access masks, layouts,
+  image aspects and usage flags. The same tables drive validation, so an unsupported
+  combination fails loudly instead of producing a silently wrong barrier.
+- **Compute passes are first-class citizens** (`PassKind::Compute` has its own
+  stage/access mapping, and a compute pass is added with `addComputePass`). No compute pass
+  is exercised yet — the first real consumer arrives with the Phase 4 mipmap generation and
+  the Phase 5 research work — but the graph already models them rather than being retrofitted
+  later.
+- **Two-round simulation, two baked barrier plans.** History reads depend on state that a
+  *previous frame* left behind and therefore does not exist at compile time. The frame
+  timeline is periodic, so `compile()` simulates the schedule twice: round 0 starts from
+  initial states (→ `firstFrameBarrier`, replayed on frame 0) and round 1 continues from
+  round 0's end states (→ `steadyBarrier`, replayed on every later frame).
+- **Ping-pong history resources.** A resource declared with `readHistory` is materialized
+  as two physical instances; `O5MRenderContext` exposes current/history without callers
+  branching on it (from frame 1 onwards, frame 0's history side is undefined by design).
+- **Import of external resources.** `importTexture()` / `importBuffer()` reference raw
+  handles the graph never owns — the swapchain backbuffer enters the graph this way — and
+  the declared usages are validated against the real ones.
+- **Dead-pass culling.** `markOutput()` names the resources that must actually be produced;
+  everything not reachable upstream from those roots is removed from the execution order.
+- **Cycle detection with a readable report.** A cycle throws and lists the passes sitting
+  on it.
+- **Lifecycle and usage inference.** First/last-use slots are computed per resource and the
+  individual usage bits are merged, so a created resource is allocated with exactly the
+  usage its passes need.
+- **`dump()`** prints the compile result — execution order, per-pass declarations,
+  lifecycle table and the baked barrier plans — which is how the graph is debugged.
 
-### 资源系统
+### Resources (`core/Inc/Resources`)
 
-- 句柄式引用（`O5MResourceHandle<T>`）+ 引用计数 + generation 槽位复用，杜绝悬垂指针
-- 单例 `O5MResourceManager` 统一管理生命周期
-- glTF 模型加载（tinygltf）、纹理加载（stb_image）、Shader 资源三类资源已接入
+- **Handle-based lifetime.** `O5MResourceHandle<T>` is a slot index plus a generation
+  counter; a stale handle resolves to `nullptr` instead of a dangling pointer, and recycled
+  slots get a new generation. `O5MResourceManager` is the singleton owner with reference
+  counting and a free list.
+- **`O5MMeshResource`.** glTF/GLB loading through tinygltf into device-local vertex/index
+  buffers, with position/color/normal/tangent/UV attributes and 16-bit index support.
+- **`O5MTextureResource`.** stb_image decode → staging upload → device-local image and view.
+- **`O5MShaderResource`.** GLSL compiled to SPIR-V at runtime with shaderc. There is no
+  offline compile step; shaders ship as source and can be inspected while debugging.
 
-### 场景与 ECS
+### Scene and ECS (`core/Inc/Scene`)
 
-- 轻量 ECS：`O5MEntity` + `O5MComponent` + 编译期 ComponentTypeID 系统
-- 内置 `TransformComponent` / `CameraComponent` / `MeshComponent`
-- 视锥剔除系统 `O5MCullingSystem`
-- 键盘 / 鼠标事件系统
+- **`O5MWorld`** owns the entity slots: creation, generation-checked `O5MEntityHandle`s,
+  deferred destruction that is safe to request from inside iteration, and centralized frame
+  time (time scale, pause, delta-time clamping).
+- **Components** are one per type with compile-time type IDs: `O5MTransformComponent`,
+  `O5MCameraComponent` (the FPS camera, including the Vulkan Y-flip and 0..1 depth
+  conventions), plus `O5MMeshComponent` and `O5MCullingSystem`, which are wired up during
+  Phase 3.
+
+### Platform and events (`core/Inc/Platform`, `core/Inc/Events`)
+
+- **`O5MWindow`** keeps GLFW opaque behind its header: window, surface creation, required
+  instance extensions, resize flag, key level state and the event pump.
+- **`O5MEventBus`** is a type-indexed bus with token-based subscriptions; unsubscribing
+  during dispatch is deferred, so handlers can safely unsubscribe themselves.
+
+---
 
 ## Architecture
 
+The dependency direction is enforced by hand and never reversed:
+
 ```text
-+---------------------------------------------------+
-|  main/                                            |
-|    o5m_viewer   -- 主程序（窗口 / 主循环，P2 起）     |
-|    rhi_verify   -- 无窗口离屏验证程序               |
-+---------------------------------------------------+
-|  core/                                            |
-|    O5MRendergraph    -- 渲染图：资源声明/依赖排序    |
-|    O5MDevice         -- GPU 对象创建唯一出口        |
-|    O5MPipeline       -- 图形管线封装               |
-|    O5MRenderer       -- 渲染器入口                 |
-|    O5MResource*      -- 句柄式资源系统              |
-|    O5MEntity/...     -- ECS 场景组织               |
-|    O5MCullingSystem  -- 视锥剔除                   |
-+---------------------------------------------------+
-|  third_party/  stb                                 |
-|  FetchContent   tinygltf    |  system: glm glfw    |
-|  Vulkan SDK    vulkan + shaderc                    |
-+---------------------------------------------------+
+apps/
+  o5m_viewer     main program (window, frame loop, graph wiring)
+  rhi_verify     headless offscreen regression test  (permanent)
+  tex_verify     TextureResource acceptance range
+  mesh_verify    MeshResource acceptance range (hand-built GLB)
+
+core/  (static library o5m_core, Inc/ and Src/ mirrored)
+  Platform      O5MWindow            GLFW window, input, surface, event pump
+  Events        O5MEvent*            event bus, keyboard/mouse events
+  Scene         O5MWorld / O5MEntity ECS, transform, FPS camera, culling
+  RenderGraph   O5MRendergraph       declarations -> barriers/lifetime -> execution
+  RHI           O5MDevice / Swapchain / Pipeline
+                                     the only place Vulkan API calls live
+  Resources     O5MResource*         glTF meshes, textures, runtime-compiled shaders
+
+      Platform -> Events -> Scene -> RenderGraph -> RHI        (never the other way)
+
+third_party/  vendored stb
+FetchContent  tinygltf v2.9.4
+system        Vulkan SDK (vulkan + shaderc), GLFW3, glm
 ```
+
+House rules that new code is expected to follow:
+
+- Only `O5MDevice.cpp` may create buffers, images or allocate memory.
+- Resources are strong handles, never raw pointers and never string lookups.
+- Passes declare intent; synchronization, layouts and lifetime are derived, not written.
+- Class names carry the `O5M` prefix; the include root is `core/Inc`
+  (`#include "RHI/O5MDevice.h"`).
+- C++20, RAII for every Vulkan object, dynamic rendering only.
+- Code comments are in English.
+
+---
+
+## Repository layout
+
+```text
+CMakeLists.txt          top-level build: deps, core, apps, tests
+core/
+  CMakeLists.txt        o5m_core static library (GLOB_RECURSE over Src/)
+  Inc/ Src/             mirrored module tree: RHI, RenderGraph, Resources,
+                        Scene, Events, Platform
+apps/
+  o5m_viewer.cpp        Phase 2+ main program (window + real-time frame loop)
+  rhi_verify.cpp        headless full-chain verification, exit code 0 == pass
+  tex_verify.cpp        texture upload + sampling + sRGB round-trip probes
+  mesh_verify.cpp       GLB loading checks (uint16 indices, attributes, offsets)
+test/
+  resmgr_cycle_test.cpp resource manager create/acquire/release cycles
+  rendergraph_tests.cpp cycles, dead-pass culling, lifecycle
+  ecs_tests.cpp         entity identity, slot recycling, deferred destroy, dt
+shaders/
+  common/               shared GLSL blocks (camera UBO, per-object data)
+  fullscreen/           viewer vertex/fragment shaders
+  geometry/             PBR-era geometry shaders (Phase 3 in progress)
+assets/                 models/ textures/ hdri/ drop-in dirs (empty placeholders in git)
+experiments/            Phase 5 research sandbox (single-frame algorithm skeleton)
+third_party/stb         vendored image decoding
+.cache/vulkan-tut/      local reference material, not part of the build
+```
+
+Include paths are rooted at `core/Inc`, so consumers write `#include "Scene/O5MWorld.h"`
+regardless of where the file lives.
+
+---
 
 ## Build
 
-依赖：
+Requirements:
 
-- CMake >= 3.21，C++20 编译器
-- [Vulkan SDK](https://vulkan.lunarg.com/)（含 shaderc）
-- GLFW3、glm
+| Requirement | Notes |
+| --- | --- |
+| CMake ≥ 3.21 | `cmake --version` |
+| C++20 compiler | AppleClang / GCC / Clang |
+| [Vulkan SDK](https://vulkan.lunarg.com/) | must include **shaderc** and the RAII headers |
+| GLFW 3 | `brew install glfw` · `apt install libglfw3-dev` · `vcpkg install glfw3` |
+| glm | `brew install glm` · `apt install libglm-dev` · `vcpkg install glm` |
+| tinygltf v2.9.4 | fetched automatically with `FetchContent` |
+| stb | vendored in `third_party/` |
 
 ```bash
-# macOS
-brew install glfw glm
-
 git clone https://github.com/Arkghem/-o-5M.git
 cd -o-5M
+
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-## Verify
-
-`rhi_verify` 是无窗口的离屏全链路验证程序，不依赖显示环境，可在 CI 中跑：
-
-- Vulkan instance / device / queue 最小 bootstrap（macOS MoltenVK 可跑）
-- RenderGraph `addResource -> addPass -> compile -> execute -> wait` 全流程
-- 两个 pass 的依赖关系（render 写 rt -> composite 读 rt）能正确排序执行
-- fence 同步：submit 后等待完成再退出
+On macOS install the runtime dependencies first:
 
 ```bash
-./build/rhi_verify   # 退出码 0 = 全链路通过
+brew install glfw glm
+# plus the LunarG Vulkan SDK (MoltenVK + shaderc)
 ```
+
+`GLM_FORCE_DEPTH_ZERO_TO_ONE` is defined globally in the top-level `CMakeLists.txt` on
+purpose: `core/` and `apps/` must agree on glm's depth convention or the two translation
+units diverge silently (ODR).
+
+Targets produced: `o5m_core`, `o5m_viewer`, `rhi_verify`, `tex_verify`, `mesh_verify`,
+`resmgr_cycle_test`, `rendergraph_tests`, `ecs_tests`.
+
+---
+
+## Running
+
+### `o5m_viewer` — the real-time program
+
+```bash
+./build/o5m_viewer                      # ESC or window close to quit
+./build/o5m_viewer --frames 300         # unattended smoke run: exit after 300 frames
+./build/o5m_viewer --rebuild-every 60   # force a swapchain rebuild every 60 frames
+```
+
+Controls: `W`/`A`/`S`/`D` to move, mouse to look around, scroll wheel to zoom, `ESC` to
+quit. Camera key levels only record state — movement is integrated once per frame in
+`O5MCameraComponent::update`.
+
+Exit codes: `0` on a clean exit (window closed or `--frames` reached), `1` on an exception.
+
+When the `VK_LAYER_KHRONOS_validation` layer is installed, the instance enables it together
+with synchronization validation, so every run doubles as a sync check; the resize path in
+particular is exercised with `--rebuild-every` because a real window drag cannot be
+triggered unattended.
+
+What one frame currently does:
+
+1. `pollEvents()` dispatches window events; the app layer subscribes to the event bus
+   (ESC request, camera key/mouse/scroll handlers).
+2. `O5MWorld::update(dt)` integrates components with a single measured delta time.
+3. The frame slot (`frameIndex % 2`) is synchronized: `waitForFences`, then
+   `swapchain.acquire()`.
+4. A small render graph is built for this frame only — the acquired swapchain image is
+   imported with `importTexture(..., eUndefined)` and `TexWrite::Present`, and the
+   per-slot camera UBO is imported as a uniform buffer.
+5. `graph->execute(...)` records the baked barriers and the pass, submits with the frame's
+   fence and the acquire/render-finished semaphores, then `present()` runs.
+
+Synchronization is split into two pools on purpose, which is the heart of the Phase 2
+exercises: command buffers, fences, `imageAvailable` semaphores and camera UBOs live
+**per frame slot**, while `renderFinished` semaphores live **per swapchain image** (the
+presentation engine still holds an image until it is re-acquired). Resize takes priority
+over everything else in the loop, and fences are only reset once a submit is certain to
+happen.
+
+### Verification programs
+
+These are headless (no display required) and are the regression gate for every change:
+
+```bash
+./build/rhi_verify            # exit code 0 == full render-graph chain passes
+./build/tex_verify            # PNG -> upload -> sample -> sRGB round-trip probes
+./build/mesh_verify           # GLB attributes, uint16 indices, primitive offsets
+```
+
+`rhi_verify` is the permanent one: it builds a graph out of a `render` pass (UBO-driven
+gradient into an RGBA16F target), a `postprocess` pass (sample + Reinhard tonemap) and
+`readback` passes, compiles it, submits two frames on one command buffer (exercising
+`readHistory` ping-pong and the frame-0/steady-state barrier plans), waits on a fence, then
+verifies the pixels on the CPU — both the UBO/tonemap math and the fact that frame 1
+sampled frame 0's output. It also dumps the compiled graph (execution order, lifecycle,
+baked barriers), which is the main way the graph is debugged.
+
+Unit tests run through CTest:
+
+```bash
+ctest --test-dir build --output-on-failure
+# resmgr_cycle, rendergraph (cycles / dead-pass / lifecycle), ecs
+```
+
+---
 
 ## Roadmap
 
-- [x] Vulkan bootstrap + 设备层立法
-- [x] RenderGraph 依赖排序与同步
-- [x] 句柄式资源管理系统
-- [ ] UBO 资源绑定
-- [ ] frames-in-flight
-- [ ] PBR 材质系统（IBL / BRDF）
-- [ ] 阴影与后处理 pass
-
-## Third-party
-
-| 库 | 用途 | 引入方式 |
+| Phase | Scope | Status |
 | --- | --- | --- |
-| vulkan-hpp (RAII) | Vulkan C++ 绑定 | Vulkan SDK |
-| shaderc | 运行时 GLSL -> SPIR-V | Vulkan SDK |
-| tinygltf | glTF 模型加载 | FetchContent v2.9.4 |
-| glm | 数学库 | 系统包 |
-| GLFW | 窗口与输入 | 系统包 |
-| stb | 纹理加载 | vendored |
+| **P0** Foundation repair | `O5MResourceManager` handle pool, `TextureResource` upload path, `MeshResource` normals/tangents/16-bit indices | ✅ done |
+| **P1** Render graph rewrite | Declaration/physical split, handle-based resource declarations (debug names interned to handles once), compute as a first-class pass kind, `readHistory` ping-pong with two-round barrier baking, imports, dead-pass culling, cycle detection, usage/lifetime inference | ✅ done |
+| **P2** Window + real-time loop | GLFW window, surface, swapchain rebuild, event bus, `frames-in-flight = 2`, FPS camera, dynamic rendering with no per-frame `waitIdle` | ✅ done |
+| **P3** Geometry pipeline | Vertex input bound to `MeshResource`, depth buffer and `writeDepth`, stencil exercise, MRT, `O5MDescriptorAllocator`, ECS integration (transform/mesh/draw items, frustum culling) | 🚧 in progress |
+| **P4** PBR | Materials and textures → Cook-Torrance → shadow mapping with PCF → IBL (including compute mipmap generation) → integration and debug views (albedo / normal / roughness / shadow) | ⏳ planned |
+| **P5** Research-ready layer | Shader hot reload, per-pass GPU timers, an experiments template, compute software ray tracing (macOS has no hardware RT) | ⏳ planned |
+
+Phase 3 is being implemented step by step and everything else is downstream of it: until a
+GLB mesh can be drawn with correct occlusion, materials, shadows and IBL have nothing to
+shade.
+
+---
+
+## Design notes and non-goals
+
+These are deliberate boundaries for the current stage, not oversights:
+
+- **Single queue.** No async compute or transfer queue yet; the graph assumes one graphics
+  queue.
+- **One writer per resource.** WAW edges are not modeled, so a resource may not be written
+  by two passes.
+- **No memory aliasing.** Resource memory is not reused across lifetimes yet (a known
+  stretch goal).
+- **No VMA.** One `vkAllocateMemory` per resource, with the ~4096 allocation ceiling
+  tracked explicitly rather than hidden.
+- **No input attachments.** Subpass-style input attachment reads are not part of the
+  model.
+- **Names are debug-only.** Nothing resolves a resource by string at runtime; handles are
+  the identity, and interned names exist purely for `dump()` and error messages.
+- **The graph is rebuilt per frame in the viewer.** The swapchain image changes every
+  frame, so building a one-frame graph is cheaper and simpler than tracking per-image
+  state; `compile()` is pure CPU work.
+
+---
+
+## Third-party libraries
+
+| Library | Used for | How it is pulled in |
+| --- | --- | --- |
+| [vulkan-hpp](https://github.com/KhronosGroup/Vulkan-Hpp) (RAII) | Vulkan C++ bindings | Vulkan SDK |
+| [shaderc](https://github.com/google/shaderc) | GLSL → SPIR-V at runtime | Vulkan SDK |
+| [tinygltf](https://github.com/syoyo/tinygltf) | glTF/GLB mesh loading | `FetchContent`, tag `v2.9.4` |
+| [glm](https://github.com/g-truc/glm) | math (built with `GLM_FORCE_DEPTH_ZERO_TO_ONE`) | system package |
+| [GLFW](https://www.glfw.org/) | window, input, surface | system package |
+| [stb](https://github.com/nothings/stb) | image decoding (`stb_image`) | vendored in `third_party/stb` |
+
+---
+
+## Platform notes
+
+Development and verification happen on macOS, where Vulkan runs on top of MoltenVK. Points
+worth knowing when reading the code:
+
+- **Portability subset.** The instance is created with
+  `vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR` — without it MoltenVK enumerates no
+  physical device at all — and `VK_KHR_portability_subset` is enabled on the device.
+  Extension support is queried rather than assumed.
+- **Depth formats.** Single-sample depth is planned around `D32_SFLOAT`, picked through a
+  runtime format query and the most reliably supported choice on MoltenVK; the stencil
+  exercise will use a combined depth/stencil format. `O5MDevice::aspectFromFormat()` already
+  maps both to the right aspect mask.
+- **Y flip and depth range.** Vulkan's clip space differs from OpenGL's: the Y flip is
+  folded into the projection matrix in `O5MCameraComponent`, and the `[0, 1]` depth range
+  comes from the global `GLM_FORCE_DEPTH_ZERO_TO_ONE` definition.
+- **No hardware ray tracing.** MoltenVK exposes no RT extensions, so Phase 5 ray tracing is
+  planned as a compute shader with a BVH in a storage buffer — which exercises the compute
+  and history paths far better than a vendor-specific extension would.
+- Linux builds are expected to work with the same CMake flow (GLFW + glm + Vulkan SDK);
+  macOS is simply the configuration that is exercised continuously.
+
+---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © MaYu
