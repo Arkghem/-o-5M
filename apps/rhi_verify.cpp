@@ -304,18 +304,22 @@ int main() {
         vk::raii::Sampler sampler(o5mDevice.getDevice(), samplerInfo);
 
         // 5e. pipelines: render -> RGBA16F, postprocess -> RGBA8
-        O5MPipeline renderPipeline(o5mDevice);
-        renderPipeline.createPipeline({ vk::Format::eR16G16B16A16Sfloat },
-                                      vsRes.getShaderModule(), sceneFsRes.getShaderModule(),
-                                      "main", "main", *descLayout);
-        O5MPipeline postPipeline(o5mDevice);
-        postPipeline.createPipeline({ vk::Format::eR8G8B8A8Unorm },
-                                    vsRes.getShaderModule(), postFsRes.getShaderModule(),
-                                    "main", "main", *descLayout);
-        O5MPipeline copyPipeline(o5mDevice);
-        copyPipeline.createPipeline({ vk::Format::eR8G8B8A8Unorm },
-                                    vsRes.getShaderModule(), copyFsRes.getShaderModule(),
-                                    "main", "main", *descLayout);
+        // post/copy 共用同一份 spec（同颜色格式同 setLayout），只有 shader 不同。
+        // spec 是纯数据值对象，可以按需复制；shader module 则作为创建期参数传入。
+        const O5MPipelineSpec renderSpec{
+            .colorFormats = { vk::Format::eR16G16B16A16Sfloat },
+            .setLayouts   = { *descLayout },
+        };
+        const O5MPipelineSpec postSpec{
+            .colorFormats = { vk::Format::eR8G8B8A8Unorm },
+            .setLayouts   = { *descLayout },
+        };
+        O5MPipeline renderPipeline(o5mDevice, renderSpec);
+        renderPipeline.createPipeline(vsRes.getShaderModule(), sceneFsRes.getShaderModule());
+        O5MPipeline postPipeline(o5mDevice, postSpec);
+        postPipeline.createPipeline(vsRes.getShaderModule(), postFsRes.getShaderModule());
+        O5MPipeline copyPipeline(o5mDevice, postSpec);
+        copyPipeline.createPipeline(vsRes.getShaderModule(), copyFsRes.getShaderModule());
         std::cout << "[ok] pipelines created\n";
 
         // 5f. passes: setup declares reads/writes, execute records commands.
@@ -326,10 +330,17 @@ int main() {
                 b.write(sceneColorInfo, TexWrite::ColorStore);
             },
             [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
-                renderPipeline.begin(cmd, { ctx.getImageView(sceneColorInfo.handle) }, extent);
+                // 渲染 pass 的开关与 pipeline 绑定已解耦：begin/end 是 pass 级
+                //（static），bindPipeline 是 pipeline 级——M4 的描边遍要在同一
+                // 个 RenderingInfo 里 bind 第二条 pipeline。
+                O5MPipeline::begin(cmd, O5MBeginInfo{
+                    .colorViews = { ctx.getImageView(sceneColorInfo.handle) },
+                    .extent     = extent,
+                });
+                renderPipeline.bindPipeline(cmd);
                 renderPipeline.bindDescriptorSet(cmd, renderDescSet);
                 cmd.draw(3, 1, 0, 0);
-                renderPipeline.end(cmd);
+                O5MPipeline::end(cmd);
             });
 
         graph.addGraphicPass("postprocess",
@@ -351,10 +362,14 @@ int main() {
                 };
                 o5mDevice.getDevice().updateDescriptorSets(writes, {});
 
-                postPipeline.begin(cmd, { ctx.getImageView(finalColorInfo.handle) }, extent);
+                O5MPipeline::begin(cmd, O5MBeginInfo{
+                    .colorViews = { ctx.getImageView(finalColorInfo.handle) },
+                    .extent     = extent,
+                });
+                postPipeline.bindPipeline(cmd);
                 postPipeline.bindDescriptorSet(cmd, postDescSet);
                 cmd.draw(3, 1, 0, 0);
-                postPipeline.end(cmd);
+                O5MPipeline::end(cmd);
             });
 
         graph.addGraphicPass("readback",
@@ -392,10 +407,14 @@ int main() {
                 };
                 o5mDevice.getDevice().updateDescriptorSets(write, {});
 
-                copyPipeline.begin(cmd, { ctx.getImageView(probeInfo.handle) }, extent);
+                O5MPipeline::begin(cmd, O5MBeginInfo{
+                    .colorViews = { ctx.getImageView(probeInfo.handle) },
+                    .extent     = extent,
+                });
+                copyPipeline.bindPipeline(cmd);
                 copyPipeline.bindDescriptorSet(cmd, probeDescSet);
                 cmd.draw(3, 1, 0, 0);
-                copyPipeline.end(cmd);
+                O5MPipeline::end(cmd);
             });
 
         graph.addGraphicPass("historyReadback",

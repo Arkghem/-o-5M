@@ -413,10 +413,11 @@ int main(int argc, char** argv) {
         vk::DescriptorSetLayoutCreateInfo layoutInfo({}, bindings);
         vk::raii::DescriptorSetLayout descLayout(device.getDevice(), layoutInfo);
 
-        O5MPipeline pipeline(device);
-        pipeline.createPipeline({ swapchain.getFormat() },
-                                vsRes.getShaderModule(), fsRes.getShaderModule(),
-                                "main", "main", *descLayout);
+        O5MPipeline pipeline(device, O5MPipelineSpec{
+            .colorFormats = { swapchain.getFormat() },
+            .setLayouts   = { *descLayout },
+        });
+        pipeline.createPipeline(vsRes.getShaderModule(), fsRes.getShaderModule());
 
         // 每 slot 一个 set，分别绑到各自的 camera UBO（跟 UBO 一起翻倍）
         const std::vector<vk::DescriptorPoolSize> poolSizes = {
@@ -476,10 +477,14 @@ int main(int argc, char** argv) {
                 },
                 [bbInfo, extent, &pipeline, camDescSets, frame]
                 (O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
-                    pipeline.begin(cmd, { ctx.getImageView(bbInfo.handle) }, extent);
+                    O5MPipeline::begin(cmd, O5MBeginInfo{
+                        .colorViews = { ctx.getImageView(bbInfo.handle) },
+                        .extent     = extent,
+                    });
+                    pipeline.bindPipeline(cmd);
                     pipeline.bindDescriptorSet(cmd, camDescSets[frame]);
                     cmd.draw(3, 1, 0, 0);
-                    pipeline.end(cmd);
+                    O5MPipeline::end(cmd);
                 });
 
             graph->compile();

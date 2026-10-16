@@ -252,10 +252,11 @@ int main() {
         vk::DescriptorSetLayoutCreateInfo layoutInfo({}, bindings);
         vk::raii::DescriptorSetLayout descLayout(o5mDevice.getDevice(), layoutInfo);
 
-        O5MPipeline blitPipeline(o5mDevice);
-        blitPipeline.createPipeline({ vk::Format::eR8G8B8A8Srgb },
-                                    vsRes.getShaderModule(), blitFsRes.getShaderModule(),
-                                    "main", "main", *descLayout);
+        O5MPipeline blitPipeline(o5mDevice, O5MPipelineSpec{
+            .colorFormats = { vk::Format::eR8G8B8A8Srgb },
+            .setLayouts   = { *descLayout },
+        });
+        blitPipeline.createPipeline(vsRes.getShaderModule(), blitFsRes.getShaderModule());
         std::cout << "[ok] pipeline created\n";
 
         // descSet: written before execute -- the imported texture view is
@@ -285,10 +286,14 @@ int main() {
                 b.write(finalColorInfo, TexWrite::ColorStore);
             },
             [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
-                blitPipeline.begin(cmd, { ctx.getImageView(finalColorInfo.handle) }, extent);
+                O5MPipeline::begin(cmd, O5MBeginInfo{
+                    .colorViews = { ctx.getImageView(finalColorInfo.handle) },
+                    .extent     = extent,
+                });
+                blitPipeline.bindPipeline(cmd);
                 blitPipeline.bindDescriptorSet(cmd, descSet);
                 cmd.draw(3, 1, 0, 0);
-                blitPipeline.end(cmd);
+                O5MPipeline::end(cmd);
             });
 
         graph.addGraphicPass("readback",
