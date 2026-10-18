@@ -24,9 +24,6 @@ bool O5MTextureResource::doLoad(void) {
     m_channels = static_cast<uint32_t>(channels);
 
     vk::DeviceSize imageSize = m_width * m_height * 4;
-    // P4 IBL 再做完整 mip 链生成（层数 = floor(log2(max(w,h))) + 1，注意 +1）。
-    // 现在只上传 mip0：分配了却不填充的 mip 会永远停在 UNDEFINED 布局，
-    // ImageView 一覆盖它们，采样时 validation 直接报 VUID-vkCmdDraw-None-09600。
     uint32_t mipLevels = 1;
     
     auto [stagingBuffer, stagingMemory] = 
