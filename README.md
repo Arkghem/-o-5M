@@ -23,6 +23,7 @@ and culling components are still placeholders waiting to be wired into the ECS.
 
 - [Features](#features)
 - [Architecture](#architecture)
+- [Frame pipeline](#frame-pipeline)
 - [Repository layout](#repository-layout)
 - [Build](#build)
 - [Running](#running)
@@ -157,10 +158,70 @@ House rules that new code is expected to follow:
 - Only `O5MDevice.cpp` may create buffers, images or allocate memory.
 - Resources are strong handles, never raw pointers and never string lookups.
 - Passes declare intent; synchronization, layouts and lifetime are derived, not written.
+- Work stays inside its frame stage: asset handles resolve in the collect stage, `vkCmd*`
+  is emitted only in the record stage (see [Frame pipeline](#frame-pipeline)).
 - Class names carry the `O5M` prefix; the include root is `core/Inc`
   (`#include "RHI/O5MDevice.h"`).
 - C++20, RAII for every Vulkan object, dynamic rendering only.
 - Code comments are in English.
+
+---
+
+## Frame pipeline
+
+Every frame walks the same seven-stage timeline. The stages are defined by *when*
+information becomes available, and most synchronization bugs are work moved across one of
+the boundaries:
+
+```text
+once, at startup
+  [0] load        device, swapchain, shaders, pipelines, descriptors,
+                  GLB -> MeshResource::load() (device-local VB/IB), scene assembly
+                  the only stage allowed to create GPU objects
+
+every frame
+  [1] update      pollEvents -> world.update(dt) -> transform dirty -> camera
+                  the only stage that mutates the scene
+  [2] collect     forEachEntity -> handle.get() -> DrawItem -> DrawList,
+                  plus one binding entry per unique vk::Buffer
+                  the only render stage that resolves handles or reads the ECS
+  [3] declare     import* -> markOutput -> addGraphicPass(setup, record)
+                  setup() runs immediately and becomes the pass reads/writes
+                  pure CPU: no vkCmd*, no resource contents touched
+  [4] compile     cycle check -> topological order -> two-round state simulation
+                  -> baked barrier plans; created resources are allocated here
+                  pure CPU planning
+  [5] record      execute(): cmd.begin()
+                  per pass: enter barriers -> ctx -> record lambda -> exit barriers
+                  cmd.end() -> queue.submit(...)
+                  the only stage allowed to emit vkCmd*
+  [6] execute     the GPU runs independently; ordering is semaphores and fences
+  [7] present     present(renderFinished); the next frame waits on its fence
+```
+
+The graph touches three different callbacks, and they are not interchangeable:
+
+| | collector — stage 2 | setup lambda — stage 3 | record lambda — stage 5 |
+| --- | --- | --- | --- |
+| runs | in the frame loop, after `update()` | inside `addGraphicPass()`, immediately | inside `execute()`, with the command buffer open |
+| holds | the world, the resource manager | `O5MPassBuilder&` | `O5MRenderContext&`, `vk::raii::CommandBuffer&` |
+| produces | `DrawList` + per-frame buffer bindings | `PassDesc` reads/writes | GPU commands |
+| never | touches the graph | emits `vkCmd*` or reads resource contents | reads the scene, imports, builds pipelines |
+
+Consequences worth writing down, because the compiler will not enforce them:
+
+- **A handle is resolved exactly once per mesh per frame, in stage 2.** Everything
+  downstream consumes plain `vk::Buffer` values; the recorder never sees an asset handle.
+  That single resolution point is what keeps `Scene` free of Vulkan types.
+- **A missing declaration is not an error — it is a missing barrier.** A wrong bind is not
+  checked at all (only synchronization validation notices). Declarations and binds must
+  therefore be derived from the same collected data.
+- **Draw items are frame snapshots.** The buffers inside them must stay alive until that
+  frame's fence signals, not merely until `execute()` returns: with frames in flight the
+  GPU can still be reading frame N while the CPU already runs N+1.
+- **The viewer rebuilds the graph every frame**, so stages 3 and 4 run per frame as well.
+  They are pure CPU work and must stay cheap; nothing in them may touch the scene or the
+  resource pool.
 
 ---
 
@@ -255,7 +316,8 @@ with synchronization validation, so every run doubles as a sync check; the resiz
 particular is exercised with `--rebuild-every` because a real window drag cannot be
 triggered unattended.
 
-What one frame currently does:
+What one frame currently does (the full stage model, including the collect stage that
+Phase 3 adds, is in [Frame pipeline](#frame-pipeline)):
 
 1. `pollEvents()` dispatches window events; the app layer subscribes to the event bus
    (ESC request, camera key/mouse/scroll handlers).
