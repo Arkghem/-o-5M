@@ -61,6 +61,7 @@ struct BufferBinding {
     vk::DeviceSize size   = VK_WHOLE_SIZE;
 };
 
+//TODO: Decriptor management.
 class O5MDescriptorAllocator {
 public:
   O5MDescriptorAllocator(const O5MDescriptorAllocator &) = delete;

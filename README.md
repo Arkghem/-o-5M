@@ -15,7 +15,8 @@ Today `o5m_viewer` opens a real-time window, drives an FPS camera from keyboard/
 renders through the render graph with two frames in flight. The geometry path is what
 Phase 3 is building: there is no vertex buffer, index buffer or depth attachment in the
 viewer yet (the current demo generates its triangle from `gl_VertexIndex`), and the mesh
-and culling components are still placeholders waiting to be wired into the ECS.
+component is still a placeholder waiting to be wired into the ECS. The frame-local draw
+snapshot (`O5MDrawItem`) and frustum culling live in the renderer layer, not in `Scene`.
 
 ---
 
@@ -114,8 +115,10 @@ and culling components are still placeholders waiting to be wired into the ECS.
   time (time scale, pause, delta-time clamping).
 - **Components** are one per type with compile-time type IDs: `O5MTransformComponent`,
   `O5MCameraComponent` (the FPS camera, including the Vulkan Y-flip and 0..1 depth
-  conventions), plus `O5MMeshComponent` and `O5MCullingSystem`, which are wired up during
-  Phase 3.
+  conventions), plus `O5MMeshComponent`, which is wired up during Phase 3.
+- **Renderer (`core/Inc/Renderer`).** The frame-local draw snapshot `O5MDrawItem` /
+  `O5MDrawList` produced by the collect stage, plus (from M4) `O5MCullingSystem`.
+  It may include RHI types; `Scene` may not.
 
 ### Platform and events (`core/Inc/Platform`, `core/Inc/Events`)
 
@@ -140,13 +143,14 @@ apps/
 core/  (static library o5m_core, Inc/ and Src/ mirrored)
   Platform      O5MWindow            GLFW window, input, surface, event pump
   Events        O5MEvent*            event bus, keyboard/mouse events
-  Scene         O5MWorld / O5MEntity ECS, transform, FPS camera, culling
+  Scene         O5MWorld / O5MEntity ECS, transform, FPS camera
+  Renderer      O5MDrawItem / O5MDrawList (per-frame draw snapshot), culling
   RenderGraph   O5MRendergraph       declarations -> barriers/lifetime -> execution
   RHI           O5MDevice / Swapchain / Pipeline
                                      the only place Vulkan API calls live
   Resources     O5MResource*         glTF meshes, textures, runtime-compiled shaders
 
-      Platform -> Events -> Scene -> RenderGraph -> RHI        (never the other way)
+      Platform -> Events -> Scene -> Renderer -> RenderGraph -> RHI   (never the other way)
 
 third_party/  vendored stb
 FetchContent  tinygltf v2.9.4
@@ -231,8 +235,8 @@ Consequences worth writing down, because the compiler will not enforce them:
 CMakeLists.txt          top-level build: deps, core, apps, tests
 core/
   CMakeLists.txt        o5m_core static library (GLOB_RECURSE over Src/)
-  Inc/ Src/             mirrored module tree: RHI, RenderGraph, Resources,
-                        Scene, Events, Platform
+  Inc/ Src/             mirrored module tree: RHI, RenderGraph, Renderer,
+                        Resources, Scene, Events, Platform
 apps/
   o5m_viewer.cpp        Phase 2+ main program (window + real-time frame loop)
   rhi_verify.cpp        headless full-chain verification, exit code 0 == pass
