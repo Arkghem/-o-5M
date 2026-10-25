@@ -27,6 +27,7 @@
 #include <string_view>
 #include <vector>
 
+#include "RHI/O5MDescriptorAllocator.h"
 #include "RHI/O5MDevice.h"
 #include "RHI/O5MPipeline.h"
 #include "RenderGraph/O5MRendergraph.h"
@@ -266,32 +267,21 @@ int main() {
         vsRes.load(); sceneFsRes.load(); postFsRes.load(); copyFsRes.load();
         std::cout << "[ok] shaders compiled (GLSL -> SPIR-V via shaderc)\n";
 
-        // 5d. descriptor layout: b0 = UBO(params), b1 = sampler2D(sceneColor)
-        // both pipelines share one layout/set; render ignores b1, post ignores b0
-        const std::vector<vk::DescriptorSetLayoutBinding> bindings = {
-            { 0, vk::DescriptorType::eUniformBuffer, 1,
-              vk::ShaderStageFlagBits::eFragment, nullptr },
-            { 1, vk::DescriptorType::eCombinedImageSampler, 1,
-              vk::ShaderStageFlagBits::eFragment, nullptr },
-        };
-        vk::DescriptorSetLayoutCreateInfo layoutInfo({}, bindings);
-        vk::raii::DescriptorSetLayout descLayout(o5mDevice.getDevice(), layoutInfo);
-
-        const std::vector<vk::DescriptorPoolSize> poolSizes = {
-            { vk::DescriptorType::eUniformBuffer, 3 },
-            { vk::DescriptorType::eCombinedImageSampler, 3 },
-        };
-        vk::DescriptorPoolCreateInfo poolInfo(
-            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 3, poolSizes);
-        vk::raii::DescriptorPool descPool(o5mDevice.getDevice(), poolInfo);
-        std::vector<vk::DescriptorSetLayout> setLayouts{ *descLayout, *descLayout, *descLayout };
-        vk::DescriptorSetAllocateInfo allocInfo(*descPool, setLayouts);
-        vk::raii::DescriptorSets descSets(o5mDevice.getDevice(), allocInfo);
-        // one set per pipeline: updating a set that an earlier pass already
-        // bound would invalidate the command buffer
-        vk::DescriptorSet renderDescSet = descSets[0];
-        vk::DescriptorSet postDescSet = descSets[1];
-        vk::DescriptorSet probeDescSet = descSets[2];
+        O5MDescriptorAllocator descriptorAllocator(o5mDevice);
+        const DescriptorSetLayoutHandle descLayoutHandle =
+            descriptorAllocator.createLayout(DescriptorSetLayoutDesc{
+                { 0, vk::DescriptorType::eUniformBuffer,
+                  vk::ShaderStageFlagBits::eFragment },
+                { 1, vk::DescriptorType::eCombinedImageSampler,
+                  vk::ShaderStageFlagBits::eFragment },
+            });
+        const vk::DescriptorSetLayout descLayout =
+            descriptorAllocator.getLayout(descLayoutHandle);
+        const std::vector<DescriptorSet> descSets =
+            descriptorAllocator.allocate(descLayoutHandle, 3);
+        const DescriptorSet renderDescSet = descSets[0];
+        const DescriptorSet postDescSet = descSets[1];
+        const DescriptorSet probeDescSet = descSets[2];
 
         vk::SamplerCreateInfo samplerInfo;
         samplerInfo.setMagFilter(vk::Filter::eLinear)
@@ -308,11 +298,11 @@ int main() {
         // spec 是纯数据值对象，可以按需复制；shader module 则作为创建期参数传入。
         const O5MPipelineSpec renderSpec{
             .colorFormats = { vk::Format::eR16G16B16A16Sfloat },
-            .setLayouts   = { *descLayout },
+            .setLayouts   = { descLayout },
         };
         const O5MPipelineSpec postSpec{
             .colorFormats = { vk::Format::eR8G8B8A8Unorm },
-            .setLayouts   = { *descLayout },
+            .setLayouts   = { descLayout },
         };
         O5MPipeline renderPipeline(o5mDevice, renderSpec);
         renderPipeline.createPipeline(vsRes.getShaderModule(), sceneFsRes.getShaderModule());
@@ -338,7 +328,7 @@ int main() {
                     .extent     = extent,
                 });
                 renderPipeline.bindPipeline(cmd);
-                renderPipeline.bindDescriptorSet(cmd, renderDescSet);
+                renderPipeline.bindDescriptorSet(cmd, renderDescSet.set);
                 cmd.draw(3, 1, 0, 0);
                 O5MPipeline::end(cmd);
             });
@@ -352,22 +342,19 @@ int main() {
                 // the sampled view only exists after compile(), so the
                 // descriptor write happens at record time via the context;
                 // it targets a set no earlier pass has bound yet
-                vk::DescriptorBufferInfo uboInfo(*paramsBuffer, 0, 16);
-                vk::DescriptorImageInfo sceneInfo(
-                    *sampler, ctx.getImageView(sceneColorInfo.handle),
-                    vk::ImageLayout::eShaderReadOnlyOptimal);
-                vk::WriteDescriptorSet writes[] = {
-                    { postDescSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {} },
-                    { postDescSet, 1, 0, vk::DescriptorType::eCombinedImageSampler, sceneInfo, {}, {} },
-                };
-                o5mDevice.getDevice().updateDescriptorSets(writes, {});
+                descriptorAllocator.writeBuffer(
+                    postDescSet, 0, vk::DescriptorType::eUniformBuffer,
+                    { *paramsBuffer, 0, 16 });
+                descriptorAllocator.writeImage(
+                    postDescSet, 1, vk::DescriptorType::eCombinedImageSampler,
+                    ctx.getImageView(sceneColorInfo.handle), *sampler);
 
                 O5MPipeline::begin(cmd, O5MBeginInfo{
                     .colorViews = { ctx.getImageView(finalColorInfo.handle) },
                     .extent     = extent,
                 });
                 postPipeline.bindPipeline(cmd);
-                postPipeline.bindDescriptorSet(cmd, postDescSet);
+                postPipeline.bindDescriptorSet(cmd, postDescSet.set);
                 cmd.draw(3, 1, 0, 0);
                 O5MPipeline::end(cmd);
             });
@@ -398,21 +385,16 @@ int main() {
                 b.write(probeInfo, TexWrite::ColorStore);
             },
             [&](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
-                vk::DescriptorImageInfo histInfo(
-                    *sampler, ctx.getHistoryImageView(finalColorInfo.handle),
-                    vk::ImageLayout::eShaderReadOnlyOptimal);
-                vk::WriteDescriptorSet write {
-                    probeDescSet, 1, 0, vk::DescriptorType::eCombinedImageSampler,
-                    histInfo, {}, {}
-                };
-                o5mDevice.getDevice().updateDescriptorSets(write, {});
+                descriptorAllocator.writeImage(
+                    probeDescSet, 1, vk::DescriptorType::eCombinedImageSampler,
+                    ctx.getHistoryImageView(finalColorInfo.handle), *sampler);
 
                 O5MPipeline::begin(cmd, O5MBeginInfo{
                     .colorViews = { ctx.getImageView(probeInfo.handle) },
                     .extent     = extent,
                 });
                 copyPipeline.bindPipeline(cmd);
-                copyPipeline.bindDescriptorSet(cmd, probeDescSet);
+                copyPipeline.bindDescriptorSet(cmd, probeDescSet.set);
                 cmd.draw(3, 1, 0, 0);
                 O5MPipeline::end(cmd);
             });
@@ -446,11 +428,9 @@ int main() {
 
         // render set's UBO binding is known before execute; write it up front
         {
-            vk::DescriptorBufferInfo uboInfo(*paramsBuffer, 0, 16);
-            vk::WriteDescriptorSet write {
-                renderDescSet, 0, 0, vk::DescriptorType::eUniformBuffer, {}, uboInfo, {}
-            };
-            o5mDevice.getDevice().updateDescriptorSets(write, {});
+            descriptorAllocator.writeBuffer(
+                renderDescSet, 0, vk::DescriptorType::eUniformBuffer,
+                { *paramsBuffer, 0, 16 });
         }
 
         // ---- 6. execute twice (fence sync): frame 0 cold start, frame 1

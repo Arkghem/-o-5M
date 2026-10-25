@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <atomic>
 #include <string>
+#include <type_traits>
 
 class O5MResource {
 private:
@@ -56,7 +57,7 @@ O5MResource* __resource_resolve(uint32_t index, uint32_t generation);
 template <typename T>
 class O5MResourceHandle {
 private:
-    const uint32_t index = 0xFFFF;
+    uint32_t index = 0xFFFF;
     uint32_t generation = 0;
 
     O5MResource* resolove(void) const;
@@ -65,9 +66,10 @@ public:
     O5MResourceHandle(void) = default;
     [[nodiscard]]O5MResourceHandle(uint32_t index, uint32_t generation) : 
         index(index), generation(generation) {}
-    ::O5MResourceHandle<T> operator=(const O5MResourceHandle& other) {
-        return O5MResourceHandle(other.index, other.generation);
-    }
+    O5MResourceHandle(const O5MResourceHandle&) = default;
+    O5MResourceHandle(O5MResourceHandle&&) = default;
+    O5MResourceHandle& operator=(const O5MResourceHandle&) = default;
+    O5MResourceHandle& operator=(O5MResourceHandle&&) = default;
 
     T* operator->(void) const { return get(); }
     T& operator*(void) const { return *get(); }

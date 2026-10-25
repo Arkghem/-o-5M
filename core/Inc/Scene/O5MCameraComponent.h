@@ -2,6 +2,7 @@
 #define __O5MCAMERACOMPONENT__H
 
 #include <bitset>
+#include <cmath>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -23,6 +24,7 @@ private:
     float m_aspectRatio = 16.0f / 9.0f; //16:9
     float m_nearPlane = 0.1f;
     float m_farPlane = 1000.0f;
+    float m_moveSpeed = 5.0f;
     
     float m_yaw;
     float m_pitch;
@@ -50,6 +52,11 @@ public:
 
     void setAspectRatio(float aspect);
     void setPerspective(float fov, float aspect, float near, float far);
+    void setMoveSpeed(float speed) { m_moveSpeed = speed; }
+
+    float getNearPlane(void) const { return m_nearPlane; }
+    float getFarPlane(void) const { return m_farPlane; }
+    float getMoveSpeed(void) const { return m_moveSpeed; }
 
     glm::mat4 getViewMatrix(void);
     glm::mat4 getProjectionMatrix(void);

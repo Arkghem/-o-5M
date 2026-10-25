@@ -77,7 +77,8 @@ target_link_libraries(o5m_viewer PRIVATE o5m_core)
 # 绝对路径编进去，这样 app 从任何工作目录启动都能找到它们；同时该路径会作为
 # shaderc 的 input_file_name，成为 includer 解析相对 #include 的依据。
 target_compile_definitions(o5m_viewer PRIVATE
-    O5M_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+    O5M_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    O5M_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 
 # ---------------------------------------------------------------------------
 # RHI Verification Executable（离屏回归测试，永久保留）

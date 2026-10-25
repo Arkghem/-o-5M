@@ -124,18 +124,27 @@ void O5MPipeline::begin(vk::raii::CommandBuffer& cmd, const O5MBeginInfo& beginI
         vk::RenderingAttachmentInfo color{};
         color.setImageView(view)
             .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal) 
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eStore)
+            .setLoadOp(beginInfo.colorLoadOp)
+            .setStoreOp(beginInfo.colorStoreOp)
             .setClearValue(beginInfo.colorClear);
         colorAttachments.push_back(color);
     }
 
     vk::RenderingAttachmentInfo depthAttachment{};
     if (beginInfo.depthView != nullptr) {
-        depthAttachment. setImageView(beginInfo.depthView)
+        depthAttachment.setImageView(beginInfo.depthView)
             .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
             .setLoadOp(beginInfo.depthLoadOp)
             .setStoreOp(beginInfo.depthStoreOp)
+            .setClearValue(beginInfo.depthClear);
+    }
+
+    vk::RenderingAttachmentInfo stencilAttachment{};
+    if (beginInfo.stencilView != nullptr) {
+        stencilAttachment.setImageView(beginInfo.stencilView)
+            .setImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+            .setLoadOp(beginInfo.stencilLoadOp)
+            .setStoreOp(beginInfo.stencilStoreOp)
             .setClearValue(beginInfo.depthClear);
     }
 
@@ -143,7 +152,8 @@ void O5MPipeline::begin(vk::raii::CommandBuffer& cmd, const O5MBeginInfo& beginI
     renderingInfo.setRenderArea({ { 0, 0 }, beginInfo.extent})
         .setLayerCount(1)
         .setColorAttachments(colorAttachments)
-        .setPDepthAttachment(beginInfo.depthView != nullptr ? &depthAttachment : nullptr);
+        .setPDepthAttachment(beginInfo.depthView != nullptr ? &depthAttachment : nullptr)
+        .setPStencilAttachment(beginInfo.stencilView != nullptr ? &stencilAttachment : nullptr);
 
     cmd.beginRendering(renderingInfo);
 
@@ -175,4 +185,9 @@ void O5MPipeline::bindPipeline(vk::raii::CommandBuffer& cmd) {
 
 void O5MPipeline::bindDescriptorSet(vk::raii::CommandBuffer& cmd, vk::DescriptorSet set) {
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout, 0, set, nullptr);
+}
+
+void O5MPipeline::bindDescriptorSets(vk::raii::CommandBuffer& cmd, uint32_t firstSet,
+                                     vk::ArrayProxy<const vk::DescriptorSet> sets) {
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout, firstSet, sets, nullptr);
 }

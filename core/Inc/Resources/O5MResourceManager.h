@@ -2,6 +2,7 @@
 #define __O5MRESOURCEMANAGER__H
 
 #include <unordered_map>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -78,6 +79,7 @@ public:
     }
 
     Slot& getResource(const uint32_t index);
+    size_t getResourceCount(void) const { return resources.size(); }
     void release(const uint64_t resourceId);
 };
 

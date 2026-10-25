@@ -1,14 +1,23 @@
 #include "Scene/O5MCameraComponent.h"
 
 void O5MCameraComponent::setAspectRatio(float aspect){
+    if (!std::isfinite(aspect) || aspect <= 0.0f) {
+        return;
+    }
     m_aspectRatio = aspect;
+    projectionDirty = true;
 }
 
 void O5MCameraComponent::setPerspective(float fov, float aspect, float zNear, float zFar) {
+    if (!std::isfinite(fov) || !std::isfinite(aspect) || !std::isfinite(zNear) ||
+        !std::isfinite(zFar) || aspect <= 0.0f || zNear <= 0.0f || zFar <= zNear) {
+        return;
+    }
     m_fieldOfView = fov;
     m_aspectRatio = aspect;
     m_nearPlane = zNear;
     m_farPlane = zFar;
+    projectionDirty = true;
 }
 
 glm::mat4 O5MCameraComponent::getViewMatrix(void) {
@@ -21,9 +30,13 @@ glm::mat4 O5MCameraComponent::getViewMatrix(void) {
 };
 
 glm::mat4 O5MCameraComponent::getProjectionMatrix(void) {
+    if (!projectionDirty)
+        return m_projectionMatrix;
+
     m_projectionMatrix = glm::perspective(glm::radians(m_fieldOfView * zoom), m_aspectRatio, m_nearPlane, m_farPlane);
 
     m_projectionMatrix[1][1] *= -1.0f;
+    projectionDirty = false;
     return m_projectionMatrix;
 };
 
@@ -48,20 +61,29 @@ void O5MCameraComponent::processKey(O5MKeyboardEvent::E_KeyboardKey key, bool is
 
 //I think this should be done in Transform component.
 void O5MCameraComponent::move(O5MCameraComponent::ECameraMovement direction, float deltaTime) {
+    glm::vec3 forward = glm::vec3(m_front.x, 0.0f, m_front.z);
+    if (glm::dot(forward, forward) < 1e-6f) {
+        forward = glm::vec3(0.0f, 0.0f, -1.0f);
+    } else {
+        forward = glm::normalize(forward);
+    }
+    const glm::vec3 right = glm::normalize(glm::cross(forward, m_worldUp));
+    glm::vec3 offset(0.0f);
     switch (direction) {
         case O5MCameraComponent::FORWARD:
-            m_position += m_front * deltaTime;
+            offset = forward;
             break;
         case O5MCameraComponent::BACKWARD:
-            m_position -= m_front * deltaTime;
+            offset = -forward;
             break;
         case O5MCameraComponent::LEFT:
-            m_position -= m_right * deltaTime;
+            offset = -right;
             break;
         case O5MCameraComponent::RIGHT:
-            m_position += m_right * deltaTime;
+            offset = right;
             break;
     }
+    m_position += offset * m_moveSpeed * deltaTime;
 }
 
 void O5MCameraComponent::processMouseMovement(float xOffset, float yOffset) {
@@ -69,8 +91,14 @@ void O5MCameraComponent::processMouseMovement(float xOffset, float yOffset) {
     yOffset *= 0.1f;
 
     m_yaw += xOffset;
-    m_pitch += yOffset;
+    m_pitch -= yOffset;
 
+    if (m_yaw > 180.0f) {
+        m_yaw -= 360.0f;
+    }
+    if (m_yaw < -180.0f) {
+        m_yaw += 360.0f;
+    }
     if (m_pitch > 89.0f) {
         m_pitch = 89.0f;
     }
@@ -89,6 +117,8 @@ void O5MCameraComponent::processMouseScroll(float yOffset) {
     if (zoom > 1.0f) {
         zoom = 1.0f;
     }
+
+    projectionDirty = true;
 }
 
 void O5MCameraComponent::onInitializing(void) {
@@ -98,6 +128,7 @@ void O5MCameraComponent::onInitializing(void) {
     m_right = glm::normalize(glm::cross(m_front, m_worldUp));
     m_yaw = -90.0f;
     m_pitch = 0.0f;
+    projectionDirty = true;
 } 
 
 void O5MCameraComponent::update(float deltaTime) {
@@ -106,8 +137,20 @@ void O5MCameraComponent::update(float deltaTime) {
                m_keyDown.test(static_cast<size_t>(key));
     };
 
-    if (held(O5MKeyboardEvent::Key_W)) move(FORWARD, deltaTime);
-    if (held(O5MKeyboardEvent::Key_S)) move(BACKWARD, deltaTime);
-    if (held(O5MKeyboardEvent::Key_A)) move(LEFT, deltaTime);
-    if (held(O5MKeyboardEvent::Key_D)) move(RIGHT, deltaTime);
+    glm::vec3 forward = glm::vec3(m_front.x, 0.0f, m_front.z);
+    if (glm::dot(forward, forward) < 1e-6f) {
+        forward = glm::vec3(0.0f, 0.0f, -1.0f);
+    } else {
+        forward = glm::normalize(forward);
+    }
+    const glm::vec3 right = glm::normalize(glm::cross(forward, m_worldUp));
+    glm::vec3 wish(0.0f);
+    if (held(O5MKeyboardEvent::Key_W)) wish += forward;
+    if (held(O5MKeyboardEvent::Key_S)) wish -= forward;
+    if (held(O5MKeyboardEvent::Key_D)) wish += right;
+    if (held(O5MKeyboardEvent::Key_A)) wish -= right;
+    if (glm::dot(wish, wish) > 1e-6f) {
+        m_position += glm::normalize(wish) * m_moveSpeed * deltaTime;
+    }
+    updateCameraVectors();
 }

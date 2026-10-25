@@ -9,14 +9,14 @@ and to end up with a PBR pipeline whose every line is understood.
 > The project started on OpenGL with a hand-rolled RHI layer, then migrated wholesale to
 > Vulkan RAII (`vulkan_raii.hpp`). It is developed and verified on macOS through MoltenVK.
 
-**Status:** Phase 0/1/2 are complete; **Phase 3 — geometry pipeline, depth/stencil,
-descriptor allocator and ECS wiring — is in progress** on the `Phase_Engine` branch.
+**Status:** Phase 0/1/2/3 are complete. Phase 3 — geometry pipeline, depth/stencil,
+descriptor allocator and ECS wiring — is done on the `Phase_Engine` branch.
 Today `o5m_viewer` opens a real-time window, drives an FPS camera from keyboard/mouse and
-renders through the render graph with two frames in flight. The geometry path is what
-Phase 3 is building: there is no vertex buffer, index buffer or depth attachment in the
-viewer yet (the current demo generates its triangle from `gl_VertexIndex`), and the mesh
-component is still a placeholder waiting to be wired into the ECS. The frame-local draw
-snapshot (`O5MDrawItem`) and frustum culling live in the renderer layer, not in `Scene`.
+renders GLB meshes through the render graph with two frames in flight. The Phase 3 path
+covers vertex/index buffers, depth/stencil, ECS-driven transforms, the frame-local
+`O5MDrawItem` snapshot, frustum culling and descriptor allocation. `--debug depth|normal`
+switches the MRT/depth visualization. The draw snapshot and culling live in the renderer
+layer, not in `Scene`.
 
 ---
 
@@ -113,11 +113,12 @@ snapshot (`O5MDrawItem`) and frustum culling live in the renderer layer, not in 
 - **`O5MWorld`** owns the entity slots: creation, generation-checked `O5MEntityHandle`s,
   deferred destruction that is safe to request from inside iteration, and centralized frame
   time (time scale, pause, delta-time clamping).
-- **Components** are one per type with compile-time type IDs: `O5MTransformComponent`,
-  `O5MCameraComponent` (the FPS camera, including the Vulkan Y-flip and 0..1 depth
-  conventions), plus `O5MMeshComponent`, which is wired up during Phase 3.
+- **Components** are one per type with compile-time type IDs: `O5MTransformComponent`
+  (local/world matrices and parent propagation), `O5MCameraComponent` (the FPS camera,
+  including the Vulkan Y-flip and 0..1 depth conventions), plus `O5MMeshComponent`
+  (mesh handle and visibility).
 - **Renderer (`core/Inc/Renderer`).** The frame-local draw snapshot `O5MDrawItem` /
-  `O5MDrawList` produced by the collect stage, plus (from M4) `O5MCullingSystem`.
+  `O5MDrawList` produced by the collect stage, plus `O5MCullingSystem`.
   It may include RHI types; `Scene` may not.
 
 ### Platform and events (`core/Inc/Platform`, `core/Inc/Events`)
@@ -375,13 +376,12 @@ ctest --test-dir build --output-on-failure
 | **P0** Foundation repair | `O5MResourceManager` handle pool, `TextureResource` upload path, `MeshResource` normals/tangents/16-bit indices | ✅ done |
 | **P1** Render graph rewrite | Declaration/physical split, handle-based resource declarations (debug names interned to handles once), compute as a first-class pass kind, `readHistory` ping-pong with two-round barrier baking, imports, dead-pass culling, cycle detection, usage/lifetime inference | ✅ done |
 | **P2** Window + real-time loop | GLFW window, surface, swapchain rebuild, event bus, `frames-in-flight = 2`, FPS camera, dynamic rendering with no per-frame `waitIdle` | ✅ done |
-| **P3** Geometry pipeline | Vertex input bound to `MeshResource`, depth buffer and `writeDepth`, stencil exercise, MRT, `O5MDescriptorAllocator`, ECS integration (transform/mesh/draw items, frustum culling) | 🚧 in progress |
+| **P3** Geometry pipeline | Vertex input bound to `MeshResource`, depth buffer and `writeDepth`, stencil exercise, MRT, `O5MDescriptorAllocator`, ECS integration (transform/mesh/draw items, frustum culling) | ✅ done |
 | **P4** PBR | Materials and textures → Cook-Torrance → shadow mapping with PCF → IBL (including compute mipmap generation) → integration and debug views (albedo / normal / roughness / shadow) | ⏳ planned |
 | **P5** Research-ready layer | Shader hot reload, per-pass GPU timers, an experiments template, compute software ray tracing (macOS has no hardware RT) | ⏳ planned |
 
-Phase 3 is being implemented step by step and everything else is downstream of it: until a
-GLB mesh can be drawn with correct occlusion, materials, shadows and IBL have nothing to
-shade.
+Phase 4 builds on the Phase 3 geometry path: materials, shadows and IBL have a real
+depth-tested mesh to shade.
 
 ---
 

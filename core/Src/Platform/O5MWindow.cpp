@@ -98,6 +98,7 @@ O5MWindow::O5MWindow(const std::string& title, uint32_t width, uint32_t height) 
     glfwSetScrollCallback(m_window, &O5MWindow::scrollCallback);
     glfwSetMouseButtonCallback(m_window, &O5MWindow::mouseButtonCallback);
     glfwSetFramebufferSizeCallback(m_window, &O5MWindow::framebufferResizeCallback);
+    glfwSetWindowFocusCallback(m_window, &O5MWindow::focusCallback);
 
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
@@ -172,6 +173,26 @@ void O5MWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, 
 
 void O5MWindow::framebufferResizeCallback(GLFWwindow* window, int /*w*/, int /*h*/) {
     static_cast<O5MWindow*>(glfwGetWindowUserPointer(window))->m_resized = true;
+}
+
+void O5MWindow::focusCallback(GLFWwindow* window, int focused) {
+    static_cast<O5MWindow*>(glfwGetWindowUserPointer(window))->onFocus(focused);
+}
+
+void O5MWindow::onFocus(int focused) {
+    if (focused) {
+        return;
+    }
+    for (size_t i = 0; i < m_keyDown.size(); ++i) {
+        if (!m_keyDown.test(i)) {
+            continue;
+        }
+        m_keyDown.reset(i);
+        m_eventBus.publishEvent(O5MKeyboardEvent(
+            O5MKeyboardEvent::Released,
+            static_cast<O5MKeyboardEvent::E_KeyboardKey>(i)));
+    }
+    m_hasLastMouse = false;
 }
 
 void O5MWindow::onKey(int key, int action) {

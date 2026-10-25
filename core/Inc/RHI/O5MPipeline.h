@@ -4,6 +4,8 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
+#include <array>
+#include <optional>
 #include <vector>
 
 #include "RHI/O5MDevice.h"
@@ -30,10 +32,15 @@ struct O5MPipelineSpec {
 struct O5MBeginInfo {
     std::vector<vk::ImageView> colorViews;
     vk::ImageView depthView = nullptr;
+    vk::ImageView stencilView = nullptr;
     vk::Extent2D extent;
     vk::ClearValue colorClear = vk::ClearColorValue(std::array<float, 4>{0.f,0.f,0.f,1.f}), depthClear{vk::ClearDepthStencilValue{1.0f, 0u}};
+    vk::AttachmentLoadOp colorLoadOp = vk::AttachmentLoadOp::eClear;
+    vk::AttachmentStoreOp colorStoreOp = vk::AttachmentStoreOp::eStore;
     vk::AttachmentLoadOp depthLoadOp = vk::AttachmentLoadOp::eClear;
     vk::AttachmentStoreOp depthStoreOp = vk::AttachmentStoreOp::eStore;
+    vk::AttachmentLoadOp stencilLoadOp = vk::AttachmentLoadOp::eClear;
+    vk::AttachmentStoreOp stencilStoreOp = vk::AttachmentStoreOp::eStore;
 };
 
 class O5MPipeline {
@@ -50,7 +57,10 @@ public:
                         const char* fsEntry = "main");
 
     void bindDescriptorSet(vk::raii::CommandBuffer& cmd, vk::DescriptorSet set);
+    void bindDescriptorSets(vk::raii::CommandBuffer& cmd, uint32_t firstSet,
+                            vk::ArrayProxy<const vk::DescriptorSet> sets);
     void bindPipeline(vk::raii::CommandBuffer& cmd);
+    const vk::raii::PipelineLayout& getPipelineLayout(void) const { return m_pipelineLayout; }
 
     void pushConstant(
         vk::raii::CommandBuffer& cmd,

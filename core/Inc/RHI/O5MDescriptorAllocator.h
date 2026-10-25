@@ -4,11 +4,13 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
-#include <unordered_map>
+#include <algorithm>
 #include <cassert>
-#include <set>
-#include <vector>
 #include <cstdint>
+#include <initializer_list>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "O5MDevice.h"
 
@@ -29,12 +31,13 @@ public:
         vk::DescriptorSetLayoutCreateFlags flags = {}
     ):m_bindings(bindings),
       m_flags(flags) {
-        //verification
-        bool sorted = std::is_sorted(m_bindings.begin(), m_bindings.end());
-        bool unique = std::set<BindingDesc>(m_bindings.begin(), m_bindings.end()).size() == m_bindings.size();
-
-        assert(sorted && "binding number not sorted");
-        assert(unique && "binding number duplicated");
+        std::sort(m_bindings.begin(), m_bindings.end());
+        const auto duplicate = std::adjacent_find(
+            m_bindings.begin(), m_bindings.end(),
+            [](const BindingDesc& a, const BindingDesc& b) { return a.binding == b.binding; });
+        if (duplicate != m_bindings.end()) {
+            throw std::invalid_argument("descriptor binding duplicated");
+        }
     }
 
     bool operator==(const DescriptorSetLayoutDesc& other) const = default;
@@ -53,15 +56,12 @@ struct DescriptorSet {
     DescriptorSetLayoutHandle layout{};
 };
 
-// Public, allocator-owned description of one buffer binding.
-// Callers never have to touch vk::DescriptorBufferInfo.
 struct BufferBinding {
     vk::Buffer     buffer = nullptr;
     vk::DeviceSize offset = 0;
     vk::DeviceSize size   = VK_WHOLE_SIZE;
 };
 
-//TODO: Decriptor management.
 class O5MDescriptorAllocator {
 public:
   O5MDescriptorAllocator(const O5MDescriptorAllocator &) = delete;
@@ -73,9 +73,10 @@ public:
 
   std::vector<DescriptorSet>
   allocate(DescriptorSetLayoutHandle,
-           uint32_t count = 1); // count for batch allocate maybe
+           uint32_t count = 1);
   DescriptorSetLayoutHandle
   createLayout(const DescriptorSetLayoutDesc &layoutDesc);
+  vk::DescriptorSetLayout getLayout(DescriptorSetLayoutHandle) const;
 
   void writeBuffer(DescriptorSet set, uint32_t binding, vk::DescriptorType type,
                    const BufferBinding &buffer, uint32_t arrayElement = 0);
@@ -93,32 +94,32 @@ public:
 private:
     struct Entry {
         vk::raii::DescriptorSetLayout layout;
-        std::vector<vk::DescriptorPoolSize> poolCosts;  
+        std::vector<BindingDesc> bindings;
+        std::vector<vk::DescriptorPoolSize> poolCosts;
     };
 
     struct PoolEntry {
         vk::raii::DescriptorPool pool;
-        std::vector<vk::DescriptorPoolSize> remaining;//we really gotta push it this high??
+        DescriptorSetLayoutHandle layout{};
         uint32_t remainingSets = 0;
     };
 
     const Entry& entryOf(DescriptorSetLayoutHandle h) const;
-    void ensureCapasity(const Entry& e, uint32_t setCount);
-    void createPool(uint32_t maxSets); // thought this should gowit O%MDevice
+    void ensureCapacity(DescriptorSetLayoutHandle h, const Entry& e, uint32_t setCount);
+    void createPool(DescriptorSetLayoutHandle h, const Entry& e, uint32_t maxSets);
 
     const BindingDesc& dscriptorOf(
         DescriptorSet set,
         uint32_t binding,
         vk::DescriptorType type,
         uint32_t arrayElement
-    ) const; //verification
+    ) const;
 
     O5MDevice& m_device;
-    vk::raii::DescriptorPool m_pool = nullptr;
-    vk::raii::DescriptorPool m_spare = nullptr; //no idea that this gonna write like this way
-
     std::vector<Entry> m_layouts;
-    std::vector<std::pair<const DescriptorSetLayoutDesc, DescriptorSetLayoutHandle>> m_layoutIndex;
+    std::vector<std::pair<DescriptorSetLayoutDesc, DescriptorSetLayoutHandle>> m_layoutIndex;
+
+    std::vector<PoolEntry> m_pools;
 };
 
 #endif // !O5M_DESCRIPTOR_ALLOCATOR_H

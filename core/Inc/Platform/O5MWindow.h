@@ -46,11 +46,13 @@ private:
     static void scrollCallback(GLFWwindow* window, double x, double y);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void framebufferResizeCallback(GLFWwindow* window, int w, int h);
+    static void focusCallback(GLFWwindow* window, int focused);
 
     void onKey(int key, int action);
     void onMouseMoved(double x, double y);
     void onMouseScrolled(double x, double y);
     void onMouseButton(int button, int action);
+    void onFocus(int focused);
 
     GLFWwindow* m_window = nullptr;
     O5MEventBus m_eventBus;
