@@ -930,7 +930,8 @@ int main(int argc, char** argv) {
                 item.firstIndex = 0;
                 item.vertexOffset = 0;
                 item.model = transform->getWorldMatrix();
-                item.boundsSphere = glm::vec4(0.0f, 0.0f, 0.0f, 0.9f);
+                // unit cube spans [-1,1]^3, its bounding sphere radius is sqrt(3) ~= 1.732
+                item.boundsSphere = glm::vec4(0.0f, 0.0f, 0.0f, 1.75f);
                 drawItems.push_back(item);
             });
 
