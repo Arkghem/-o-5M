@@ -65,6 +65,9 @@ public:
     O5MResourceHandle(void) = default;
     [[nodiscard]]O5MResourceHandle(uint32_t index, uint32_t generation) : 
         index(index), generation(generation) {}
+    ::O5MResourceHandle<T> operator=(const O5MResourceHandle& other) {
+        return O5MResourceHandle(other.index, other.generation);
+    }
 
     T* operator->(void) const { return get(); }
     T& operator*(void) const { return *get(); }

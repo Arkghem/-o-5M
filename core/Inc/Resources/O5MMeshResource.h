@@ -21,7 +21,6 @@ public:
     };
 
 private:
-
     struct MeshData{
         vk::raii::Buffer m_vertexBuffer = nullptr;
         vk::raii::DeviceMemory m_vertexBufferMemory = nullptr;
@@ -51,6 +50,7 @@ public:
     vk::DeviceMemory getIndexBufferMemory(void) const { return *m_meshData->m_indexBufferMemory; }
     vk::DeviceSize getIndexBufferOffset(void) const { return m_meshData->m_indexBufferOffset; }
     uint32_t getIndexCount(void) const { return m_meshData->m_indexCount; }
+
 private:
     bool doLoad(void) override;
     void doUnload(void) override;
