@@ -100,11 +100,19 @@ layer, not in `Scene`.
 
 - **Handle-based lifetime.** `O5MResourceHandle<T>` is a slot index plus a generation
   counter; a stale handle resolves to `nullptr` instead of a dangling pointer, and recycled
-  slots get a new generation. `O5MResourceManager` is the singleton owner with reference
-  counting and a free list.
-- **`O5MMeshResource`.** glTF/GLB loading through tinygltf into device-local vertex/index
-  buffers, with position/color/normal/tangent/UV attributes and 16-bit index support.
-- **`O5MTextureResource`.** stb_image decode → staging upload → device-local image and view.
+  slots get a new generation. `O5MResourceManager` is the singleton slot owner with a free
+  list; handles are non-owning references and `release()` is explicit.
+- **`O5MModelAsset`.** glTF/GLB import boundary: parses a file once and creates the
+  independent mesh/material/texture resources it references, plus the flattened node list
+  used by the app. It is a move-only value object, not a registered resource; it owns its
+  children and releases them in dependency order.
+- **`O5MMeshResource`.** source-agnostic geometry (device-local VB/IB) split into submesh
+  index ranges, each carrying its default material handle; position/color/normal/tangent/UV
+  attributes, 8/16/32-bit indices and a local bounding sphere.
+- **`O5MMaterialResource`.** pure data (PBR factors + five named texture handles);
+  independent of the file that produced it, so it can be shared or overridden.
+- **`O5MTextureResource`.** stb_image decode → staging upload → device-local image and
+  view; sRGB vs linear color space is part of the resource.
 - **`O5MShaderResource`.** GLSL compiled to SPIR-V at runtime with shaderc. There is no
   offline compile step; shaders ship as source and can be inspected while debugging.
 
@@ -308,6 +316,8 @@ Targets produced: `o5m_core`, `o5m_viewer`, `rhi_verify`, `tex_verify`, `mesh_ve
 ./build/o5m_viewer                      # ESC or window close to quit
 ./build/o5m_viewer --frames 300         # unattended smoke run: exit after 300 frames
 ./build/o5m_viewer --rebuild-every 60   # force a swapchain rebuild every 60 frames
+./build/o5m_viewer --frames 1 --model assets/models/DamagedHelmet.glb --dump-model
+                                        # import-only smoke: print meshes/materials/textures
 ```
 
 Controls: `W`/`A`/`S`/`D` to move, mouse to look around, scroll wheel to zoom, `ESC` to

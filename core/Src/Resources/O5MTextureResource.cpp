@@ -7,8 +7,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <tuple>
 
 bool O5MTextureResource::doLoad(void) {
+    if (getData() == nullptr || getSize() == 0 ||
+        getSize() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+
     int width = 0, height = 0, channels = 0;
     stbi_uc* pixels = stbi_load_from_memory(
         static_cast<const stbi_uc*>(getData()),
@@ -34,22 +41,24 @@ bool O5MTextureResource::doLoad(void) {
     stagingMemory.unmapMemory();
     stbi_image_free(pixels);
 
+    const vk::Format format = getFormat();
+
     m_data = std::make_unique<TextureData>();
     std::tie(m_data->m_image, m_data->m_deviceMemory) = 
         m_device.createImage2D(
-            vk::Format::eR8G8B8A8Srgb,
+            format,
             {m_width, m_height},
             mipLevels,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
-    m_device.copyBufferToImage(stagingBuffer, m_data->m_image, vk::Format::eR8G8B8A8Srgb, {m_width, m_height});
+    m_device.copyBufferToImage(stagingBuffer, m_data->m_image, format, {m_width, m_height});
 
     vk::ImageViewCreateInfo imageViewInfo {
         .image = *m_data->m_image,
         .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
+        .format = format,
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .baseMipLevel = 0,

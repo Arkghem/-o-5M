@@ -30,7 +30,9 @@
 #include "RenderGraph/O5MRendergraph.h"
 #include "Renderer/O5MCullingSystem.h"
 #include "Renderer/O5MDrawItem.h"
+#include "Resources/O5MMaterialResource.h"
 #include "Resources/O5MMeshResource.h"
+#include "Resources/O5MModelAsset.h"
 #include "Resources/O5MResourceManager.h"
 #include "Resources/O5MShaderResource.h"
 #include "Scene/O5MCameraComponent.h"
@@ -139,6 +141,18 @@ std::vector<uint8_t> readBinaryFile(const std::string& path) {
 std::string dirName(const std::string& path) {
     const size_t slash = path.find_last_of('/');
     return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+}
+
+std::string baseName(const std::string& path) {
+    const size_t slash = path.find_last_of('/');
+    std::string name = slash == std::string::npos
+        ? path
+        : path.substr(slash + 1);
+    const size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos) {
+        name.resize(dot);
+    }
+    return name.empty() ? std::string("model") : name;
 }
 
 std::string expandIncludes(const std::string& source,
@@ -280,6 +294,83 @@ vk::StencilOpState makeStencilState(vk::CompareOp compareOp, vk::StencilOp passO
     return state;
 }
 
+void dumpModel(const O5MModelAsset& model) {
+    std::cout << "[model] meshes=" << model.meshes().size()
+              << " materials=" << model.materials().size()
+              << " textures=" << model.textures().size()
+              << " parts=" << model.parts().size() << "\n";
+
+    for (size_t i = 0; i < model.meshes().size(); ++i) {
+        const O5MMeshResource* mesh = model.meshes()[i].get();
+        if (!mesh) {
+            std::cout << "  mesh[" << i << "] <empty>\n";
+            continue;
+        }
+        std::cout << "  mesh[" << i << "] v=" << mesh->getVertexCount()
+                  << " i=" << mesh->getIndexCount()
+                  << " submeshes=" << mesh->getSubMeshes().size()
+                  << " bounds=" << mesh->getBoundsSphere().x << ","
+                  << mesh->getBoundsSphere().y << ","
+                  << mesh->getBoundsSphere().z << " r="
+                  << mesh->getBoundsSphere().w << "\n";
+        for (size_t s = 0; s < mesh->getSubMeshes().size(); ++s) {
+            const auto& sub = mesh->getSubMeshes()[s];
+            std::cout << "    sub[" << s << "] first=" << sub.firstIndex
+                      << " count=" << sub.indexCount
+                      << " material=" << (sub.material.get() ? "valid" : "null")
+                      << "\n";
+        }
+    }
+
+    for (size_t i = 0; i < model.materials().size(); ++i) {
+        const O5MMaterialResource* material = model.materials()[i].get();
+        if (!material) {
+            std::cout << "  material[" << i << "] <empty>\n";
+            continue;
+        }
+        const auto& params = material->getMaterialParams();
+        const auto& slots = material->getTextures();
+        std::cout << "  material[" << i << "] " << material->getName()
+                  << " albedo=(" << params.albedoFactor.r << ","
+                  << params.albedoFactor.g << ","
+                  << params.albedoFactor.b << ","
+                  << params.albedoFactor.w << ") mr=("
+                  << params.mrFactor.x << "," << params.mrFactor.y << ")\n";
+
+        const auto logSlot = [](const char* name, const auto& handle) {
+            const O5MTextureResource* texture = handle.get();
+            if (!texture) {
+                std::cout << "    " << name << "=none\n";
+                return;
+            }
+            std::cout << "    " << name << "=" << texture->getWidth() << "x"
+                      << texture->getHeight() << " "
+                      << (texture->getColorSpace() == O5MTextureColorSpace::Srgb
+                              ? "sRGB"
+                              : "linear")
+                      << "\n";
+        };
+        logSlot("baseColor", slots.baseColor);
+        logSlot("metallicRoughness", slots.metallicRoughness);
+        logSlot("normal", slots.normal);
+        logSlot("occlusion", slots.occlusion);
+        logSlot("emissive", slots.emissive);
+    }
+
+    for (size_t i = 0; i < model.parts().size(); ++i) {
+        const glm::mat4& world = model.parts()[i].worldTransform;
+        const glm::vec4 translation = world[3];
+        const glm::vec3 xAxis = glm::normalize(glm::vec3(world[0]));
+        const glm::vec3 yAxis = glm::normalize(glm::vec3(world[1]));
+        const glm::vec3 zAxis = glm::normalize(glm::vec3(world[2]));
+        std::cout << "  part[" << i << "] translation=(" << translation.x << ","
+                  << translation.y << "," << translation.z << ") x=("
+                  << xAxis.x << "," << xAxis.y << "," << xAxis.z << ") y=("
+                  << yAxis.x << "," << yAxis.y << "," << yAxis.z << ") z=("
+                  << zAxis.x << "," << zAxis.y << "," << zAxis.z << ")\n";
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -287,6 +378,9 @@ int main(int argc, char** argv) {
         uint32_t smokeFrames = UINT32_MAX;
         uint32_t rebuildEvery = 0;
         DebugMode debugMode = DebugMode::Off;
+        bool dumpImportedModel = false;
+        std::string modelPath =
+            std::string(O5M_ASSET_DIR) + "/models/cube.glb";
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
@@ -294,6 +388,10 @@ int main(int argc, char** argv) {
                 smokeFrames = static_cast<uint32_t>(std::atoi(argv[++i]));
             } else if (arg == "--rebuild-every" && i + 1 < argc) {
                 rebuildEvery = static_cast<uint32_t>(std::atoi(argv[++i]));
+            } else if (arg == "--model" && i + 1 < argc) {
+                modelPath = argv[++i];
+            } else if (arg == "--dump-model") {
+                dumpImportedModel = true;
             } else if (arg == "--debug" && i + 1 < argc) {
                 const std::string_view mode(argv[++i]);
                 if (mode == "depth") {
@@ -608,19 +706,75 @@ int main(int argc, char** argv) {
             writeDebugDescriptor();
         };
 
-        const std::string modelPath = std::string(O5M_ASSET_DIR) + "/models/cube.glb";
+        std::cout << "[ok] loading model " << modelPath << "\n";
         std::vector<uint8_t> modelData = readBinaryFile(modelPath);
         O5MResourceManager& resourceManager = O5MResourceManager::getInstance();
-        auto meshHandle = resourceManager.create<O5MMeshResource>("cube", device);
-        meshHandle->setData(modelData.data(), modelData.size());
-        if (!meshHandle->load()) {
-            throw std::runtime_error("mesh load failed: " + modelPath);
+
+        O5MModelAsset model = O5MModelAsset::importGLB(
+            device, baseName(modelPath), modelData, dirName(modelPath));
+        if (!model.isValid() || model.meshes().empty()) {
+            throw std::runtime_error("model import produced no mesh: " + modelPath);
         }
-        const uint64_t meshId = meshHandle->getResourceId();
+
+        O5MResourceHandle<O5MMeshResource> meshHandle;
+        for (const auto& candidate : model.meshes()) {
+            if (candidate.get() != nullptr) {
+                meshHandle = candidate;
+                break;
+            }
+        }
+        if (meshHandle.get() == nullptr) {
+            throw std::runtime_error("model import produced no drawable mesh: " + modelPath);
+        }
+
         const vk::Buffer meshVertexBuffer = meshHandle->getVertexBuffer();
         const vk::Buffer meshIndexBuffer = meshHandle->getIndexBuffer();
-        std::cout << "[ok] mesh " << meshHandle->getVertexCount() << " vertices, "
-                  << meshHandle->getIndexCount() << " indices\n";
+        std::cout << "[ok] imported " << model.meshes().size() << " meshes, "
+                  << model.materials().size() << " materials, "
+                  << model.textures().size() << " textures; mesh "
+                  << meshHandle->getVertexCount() << " vertices, "
+                  << meshHandle->getIndexCount() << " indices, "
+                  << meshHandle->getSubMeshes().size() << " submeshes\n";
+        if (dumpImportedModel) {
+            dumpModel(model);
+        }
+
+        // Mix imported and runtime-authored materials. The latter have no
+        // relationship to the GLB at all: same mesh, different material.
+        struct DemoMaterialDesc {
+            glm::vec4 albedo;
+            float metallic;
+            float roughness;
+        };
+        const std::array<DemoMaterialDesc, 4> demoDescs = {{
+            { { 0.90f, 0.20f, 0.15f, 1.0f }, 0.0f, 0.15f },
+            { { 0.20f, 0.80f, 0.35f, 1.0f }, 0.0f, 0.55f },
+            { { 0.20f, 0.35f, 0.90f, 1.0f }, 1.0f, 0.20f },
+            { { 0.95f, 0.75f, 0.20f, 1.0f }, 1.0f, 0.65f },
+        }};
+
+        std::vector<O5MResourceHandle<O5MMaterialResource>> demoMaterials;
+        std::vector<uint64_t> demoMaterialIds;
+        demoMaterials.reserve(demoDescs.size());
+        demoMaterialIds.reserve(demoDescs.size());
+        for (size_t i = 0; i < demoDescs.size(); ++i) {
+            O5MMaterialResource::MaterialParamsGLSL params{};
+            params.albedoFactor = demoDescs[i].albedo;
+            params.mrFactor = glm::vec4(demoDescs[i].metallic,
+                                        demoDescs[i].roughness, 0.0f, 0.0f);
+            params.emissiveFactor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+            params.flags = glm::vec4(0.0f, 0.5f, 1.0f, 1.0f);
+
+            auto material = resourceManager.create<O5MMaterialResource>(
+                "demo-material-" + std::to_string(i), params);
+            demoMaterialIds.push_back(material->getResourceId());
+            if (!material->load()) {
+                throw std::runtime_error("demo material validation failed");
+            }
+            demoMaterials.push_back(material);
+        }
+
+
 
         std::string meshVBName = "mesh-vertex";
         std::string meshIBName = "mesh-index";
@@ -675,7 +829,14 @@ int main(int argc, char** argv) {
             transform->setPosition(cubes[i].position);
             transform->setScale(cubes[i].scale);
             transform->setParent(rootTransform);
-            rawEntity->addComponent<O5MMeshComponent>(meshHandle);
+
+            // No override on the first entity: it renders with the imported
+            // SubMesh material(s). The rest use runtime-authored materials.
+            O5MResourceHandle<O5MMaterialResource> material;
+            if (i > 0 && (i - 1) < demoMaterials.size()) {
+                material = demoMaterials[i - 1];
+            }
+            rawEntity->addComponent<O5MMeshComponent>(meshHandle, material);
             SpinComponent* spin = rawEntity->addComponent<SpinComponent>();
             spin->axis = cubes[i].spinAxis;
             spin->speed = cubes[i].spinSpeed;
@@ -923,16 +1084,41 @@ int main(int argc, char** argv) {
                 if (!mesh || !mesh->isloaded()) {
                     return;
                 }
-                O5MDrawItem item{};
-                item.vertexBuffer = mesh->getVertexBuffer();
-                item.indexBuffer = mesh->getIndexBuffer();
-                item.indexCount = mesh->getIndexCount();
-                item.firstIndex = 0;
-                item.vertexOffset = 0;
-                item.model = transform->getWorldMatrix();
-                // unit cube spans [-1,1]^3, its bounding sphere radius is sqrt(3) ~= 1.732
-                item.boundsSphere = glm::vec4(0.0f, 0.0f, 0.0f, 1.75f);
-                drawItems.push_back(item);
+
+                O5MMaterialResource* overrideMaterial =
+                    meshComponent->material().get();
+                const auto subMeshes = mesh->getSubMeshes();
+                if (subMeshes.empty()) {
+                    O5MDrawItem item{};
+                    item.vertexBuffer = mesh->getVertexBuffer();
+                    item.indexBuffer = mesh->getIndexBuffer();
+                    item.indexCount = mesh->getIndexCount();
+                    item.firstIndex = 0;
+                    item.vertexOffset = 0;
+                    item.model = transform->getWorldMatrix();
+                    item.boundsSphere = mesh->getBoundsSphere();
+                    item.material = overrideMaterial;
+                    drawItems.push_back(item);
+                    return;
+                }
+
+                for (const O5MMeshResource::SubMesh& subMesh : subMeshes) {
+                    if (subMesh.indexCount == 0) {
+                        continue;
+                    }
+                    O5MDrawItem item{};
+                    item.vertexBuffer = mesh->getVertexBuffer();
+                    item.indexBuffer = mesh->getIndexBuffer();
+                    item.indexCount = subMesh.indexCount;
+                    item.firstIndex = subMesh.firstIndex;
+                    item.vertexOffset = 0;
+                    item.model = transform->getWorldMatrix();
+                    item.boundsSphere = mesh->getBoundsSphere();
+                    item.material = overrideMaterial
+                        ? overrideMaterial
+                        : subMesh.material.get();
+                    drawItems.push_back(item);
+                }
             });
 
             const glm::mat4 viewProj =
@@ -1008,7 +1194,10 @@ int main(int argc, char** argv) {
             device.getDevice().waitForFences(*frameFences[i], true, UINT64_MAX);
         }
         device.getQueue().waitIdle();
-        resourceManager.release(meshId);
+        for (uint64_t materialId : demoMaterialIds) {
+            resourceManager.release(materialId);
+        }
+        model.release();
         std::cout << "[ok] " << frameIndex << " frames rendered, clean exit\n";
         return 0;
     } catch (const std::exception& e) {

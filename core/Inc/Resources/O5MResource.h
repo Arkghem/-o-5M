@@ -5,6 +5,8 @@
 #include <atomic>
 #include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 class O5MResource {
 private:
@@ -12,8 +14,9 @@ private:
 
     uint64_t resourceId;
     std::string name;
-    void* data;
-    size_t size;
+    void* data = nullptr;
+    size_t size = 0;
+    std::vector<uint8_t> ownedData;
 
     bool loaded = false;
 
@@ -22,6 +25,14 @@ public:
         name(name), 
         resourceId(nextId.fetch_add(1, std::memory_order_relaxed))
     {}
+
+    // `data` may point into `ownedData`; copying the object would leave that
+    // pointer aimed at the source object's vector. Resources are manager-owned
+    // and referenced through handles, so copies/moves are not part of the API.
+    O5MResource(const O5MResource&) = delete;
+    O5MResource& operator=(const O5MResource&) = delete;
+    O5MResource(O5MResource&&) = delete;
+    O5MResource& operator=(O5MResource&&) = delete;
 
     virtual ~O5MResource() = default;
 
@@ -32,6 +43,13 @@ public:
     void setData(void* data, size_t byteSize) {
         this->data = data;
         this->size = byteSize;
+    }
+
+    // Owns the source bytes. Use this for data produced by an importer, whose
+    // temporary parser buffers die before the resource does.
+    void setData(std::vector<uint8_t> bytes) {
+        ownedData = std::move(bytes);
+        setData(ownedData.data(), ownedData.size());
     }
 
     void* getData(void) const { return data; }

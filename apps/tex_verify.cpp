@@ -189,8 +189,24 @@ int main() {
                       << " != 64x64\n";
             return 1;
         }
+        if (texRes.getColorSpace() != O5MTextureColorSpace::Srgb ||
+            texRes.getFormat() != vk::Format::eR8G8B8A8Srgb) {
+            std::cerr << "[FAIL] default texture is not sRGB\n";
+            return 1;
+        }
         std::cout << "[ok] texture loaded (stbi -> staging -> device image, "
                   << kCheckerPngSize << "B PNG -> " << kTexSize << "x" << kTexSize << " RGBA)\n";
+
+        O5MTextureResource linearTex("checker-linear.png", o5mDevice,
+                                     O5MTextureColorSpace::Linear);
+        linearTex.setData(const_cast<unsigned char*>(kCheckerPng), kCheckerPngSize);
+        if (!linearTex.load() ||
+            linearTex.getColorSpace() != O5MTextureColorSpace::Linear ||
+            linearTex.getFormat() != vk::Format::eR8G8B8A8Unorm) {
+            std::cerr << "[FAIL] linear texture path does not use UNORM\n";
+            return 1;
+        }
+        std::cout << "[ok] linear texture uses eR8G8B8A8Unorm\n";
 
         // ---- 4. graph: imported texture (TextureResource) + created target +
         //      imported readback buffer ----

@@ -10,6 +10,8 @@ class O5MMaterialResource;
 class O5MMeshComponent : public O5MComponent {
 private:
     O5MResourceHandle<O5MMeshResource> m_mesh;
+    // Optional override for the whole mesh. Empty means "use each SubMesh's
+    // imported/default material".
     O5MResourceHandle<O5MMaterialResource> m_material;
     bool m_visible = true;
 public:

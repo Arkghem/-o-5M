@@ -33,8 +33,8 @@ add_library(o5m_core STATIC
 target_include_directories(o5m_core PUBLIC Inc)
 target_link_libraries(o5m_core PUBLIC glm::glm)
 
-# tinygltf — 只在 Src/O5MMeshResource.cpp（#include <tiny_gltf.h>）中使用，
-# 公共头 O5MMeshResource.h 不暴露 tinygltf 类型，所以 PRIVATE。
+# tinygltf — 只在 Src/Resources/O5MModelAsset.cpp（#include <tiny_gltf.h>）中使用，
+# 公共头 O5MModelAsset.h 不暴露 tinygltf 类型，所以 PRIVATE。
 target_link_libraries(o5m_core PRIVATE tinygltf)
 
 # stb — 只在 Src/O5MTextureResource.cpp（#include <stb_image.h>）中使用，
