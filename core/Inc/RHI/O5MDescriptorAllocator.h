@@ -74,23 +74,20 @@ public:
   std::vector<DescriptorSet>
   allocate(DescriptorSetLayoutHandle,
            uint32_t count = 1);
-  DescriptorSetLayoutHandle
-  createLayout(const DescriptorSetLayoutDesc &layoutDesc);
+  DescriptorSetLayoutHandle createLayout(const DescriptorSetLayoutDesc &layoutDesc);
   vk::DescriptorSetLayout getLayout(DescriptorSetLayoutHandle) const;
 
   void writeBuffer(DescriptorSet set, uint32_t binding, vk::DescriptorType type,
                    const BufferBinding &buffer, uint32_t arrayElement = 0);
 
-  void
-  writeImage(DescriptorSet set, uint32_t binding, vk::DescriptorType type,
-             vk::ImageView view, vk::Sampler sampler,
-             vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal,
-             uint32_t arrayElement = 0);
+  void writeImage(DescriptorSet set, uint32_t binding, vk::DescriptorType type,
+                  vk::ImageView view, vk::Sampler sampler,
+                  vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                  uint32_t arrayElement = 0);
 
   void writeBuffers(DescriptorSet set, uint32_t binding,
                     vk::DescriptorType type,
                     vk::ArrayProxy<const BufferBinding> buffers);
-
 private:
     struct Entry {
         vk::raii::DescriptorSetLayout layout;

@@ -9,9 +9,6 @@
 #include "Resources/O5MResource.h"
 #include "Resources/O5MTextureResource.h"
 
-// Pure CPU-side material data. It deliberately knows nothing about glTF or the
-// file that produced it: the importer translates file data into this structure,
-// and runtime code can create/share/override materials through handles alone.
 class O5MMaterialResource : public O5MResource {
 public:
     struct MaterialParamsGLSL {   // std140, 4 x vec4 - keep in sync with shaders
