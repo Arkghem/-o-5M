@@ -39,8 +39,6 @@ private:
     glm::mat4 m_projectionMatrix = glm::mat4(1.0f);
     bool projectionDirty = true;
 
-    // Level state, driven by key edges from the event bus. Movement is
-    // integrated once per frame from this, never from the edges themselves.
     std::bitset<O5MKeyboardEvent::Key_Count> m_keyDown;
 public:
     enum ECameraMovement {
