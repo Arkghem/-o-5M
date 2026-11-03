@@ -15,17 +15,19 @@ public:
     O5MMaterialTable(
         O5MDevice&,
         O5MDescriptorAllocator&,
-        uint32_t frameInFlight,
-        vk::DescriptorSetLayout layout1,
-        vk::DescriptorSetLayout layout2
+        uint32_t frameInFlight
     );
 
     void add(O5MMaterialResource* resource);//not handle because this table is not part of user
     uint32_t indexOf(const O5MMaterialResource* handle) const;
 
     void upload(uint32_t frameSlot); // wtf is this
+                                     
     vk::DescriptorSet paramSet(uint32_t frameSlot) const;
     DescriptorSet textureSet(uint32_t index) const;
+
+    DescriptorSetLayoutHandle paramsLayout(void) const;
+    DescriptorSetLayoutHandle textureLayout(void) const;
 private: 
     std::array<O5MMaterialResource::MaterialParamsGLSL, kCapacity>      m_params;
     std::vector<const O5MMaterialResource*>                             m_materials;
@@ -38,6 +40,9 @@ private:
 
     O5MDevice& m_device;
     O5MDescriptorAllocator& m_descAllocator;
+
+    DescriptorSetLayoutHandle m_paramsLayout;
+    DescriptorSetLayoutHandle m_textureLayout;
 
     const uint32_t frameInFlight;
 };

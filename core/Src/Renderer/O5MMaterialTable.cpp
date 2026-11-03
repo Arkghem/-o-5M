@@ -5,16 +5,14 @@
 O5MMaterialTable::O5MMaterialTable(
     O5MDevice& device,
     O5MDescriptorAllocator& descAllocator,
-    uint32_t frameInFlight,
-    vk::DescriptorSetLayout layout1,
-    vk::DescriptorSetLayout layout2
+    uint32_t frameInFlight
 ): m_device(device), m_descAllocator(descAllocator), frameInFlight(frameInFlight) {
-    auto paramsLayout = m_descAllocator.createLayout(
+    m_paramsLayout = m_descAllocator.createLayout(
         DescriptorSetLayoutDesc {
         { {0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment}, }
     });
 
-    auto textureLayout = m_descAllocator.createLayout(
+    m_textureLayout = m_descAllocator.createLayout(
         DescriptorSetLayoutDesc {
             {
                 {0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment},
@@ -39,7 +37,7 @@ O5MMaterialTable::O5MMaterialTable(
         )); 
     }
 
-    m_paramSets = m_descAllocator.allocate(paramsLayout, frameInFlight);
+    m_paramSets = m_descAllocator.allocate(m_paramsLayout, frameInFlight);
     for (uint32_t i = 0; i < frameInFlight; ++i) {
         m_descAllocator.writeBuffer(
             m_paramSets[i],
@@ -49,7 +47,7 @@ O5MMaterialTable::O5MMaterialTable(
         );
     }
 
-    m_textureSets = m_descAllocator.allocate(textureLayout, kCapacity);
+    m_textureSets = m_descAllocator.allocate(m_textureLayout, kCapacity);
 
      vk::SamplerCreateInfo samplerInfo{
          .magFilter = vk::Filter::eLinear,
@@ -127,4 +125,13 @@ vk::DescriptorSet O5MMaterialTable::paramSet(uint32_t frameSlot) const {
 
 DescriptorSet O5MMaterialTable::textureSet(uint32_t index) const {
     return m_textureSets[index];
+}
+
+
+DescriptorSetLayoutHandle O5MMaterialTable::paramsLayout(void) const {
+    return m_paramsLayout;
+}
+
+DescriptorSetLayoutHandle O5MMaterialTable::textureLayout(void) const {
+    return m_textureLayout;
 }
