@@ -180,8 +180,6 @@ void O5MDevice::copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& 
     submitInfo.setCommandBuffers(*cmd);
 
     m_queue.submit(submitInfo);
-    // v1 阻塞等队列空闲：简单且正确，专供加载期。
-    // 升级路径：submit 带 fence → 下次 update() 收割，上传不再阻塞主线程。
     m_queue.waitIdle();
 }
 
@@ -218,8 +216,6 @@ void O5MDevice::copyBufferToImage(const vk::raii::Buffer& src, const vk::raii::I
     vk::ImageMemoryBarrier after{
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
         .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-        // oldLayout 必须是图像当前的真实布局（before-barrier 刚把它转进
-        // TRANSFER_DST_OPTIMAL）；写 UNDEFINED 等于声明"内容可以丢弃"
         .oldLayout = vk::ImageLayout::eTransferDstOptimal,
         .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         .image = dst,
