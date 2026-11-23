@@ -81,6 +81,16 @@ target_compile_definitions(o5m_viewer PRIVATE
     O5M_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 
 # ---------------------------------------------------------------------------
+# PBR Verification Executable（Phase 4 靶场：baking graph + runtime graph）
+# 窗口+实时循环，与 viewer 同款帧同步；两图的 pass 体先留空，逐步填。
+# ---------------------------------------------------------------------------
+add_executable(pbr_verify apps/pbr_verify.cpp)
+target_link_libraries(pbr_verify PRIVATE o5m_core)
+target_compile_definitions(pbr_verify PRIVATE
+    O5M_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    O5M_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+
+# ---------------------------------------------------------------------------
 # RHI Verification Executable（离屏回归测试，永久保留）
 # ---------------------------------------------------------------------------
 add_executable(rhi_verify apps/rhi_verify.cpp)

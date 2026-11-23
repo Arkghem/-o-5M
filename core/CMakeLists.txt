@@ -21,24 +21,17 @@ find_package(glm REQUIRED)
 # ---------------------------------------------------------------------------
 # Library target
 # ---------------------------------------------------------------------------
-# 模块化子目录（RHI/RenderGraph/Resources/Scene/Events/Platform/Renderer），
-# GLOB_RECURSE + CONFIGURE_DEPENDS：新增源文件后 CMake 自动重新收集。
 file(GLOB_RECURSE SRC CONFIGURE_DEPENDS "Src/*.cpp")
 add_library(o5m_core STATIC
     ${SRC}
 )
 
 # PUBLIC = this include directory propagates to every target that links
-# o5m_core（apps/ 下的可执行目标）。引用形式：#include "RHI/O5MDevice.h"。
 target_include_directories(o5m_core PUBLIC Inc)
 target_link_libraries(o5m_core PUBLIC glm::glm)
 
-# tinygltf — 只在 Src/Resources/O5MModelAsset.cpp（#include <tiny_gltf.h>）中使用，
-# 公共头 O5MModelAsset.h 不暴露 tinygltf 类型，所以 PRIVATE。
 target_link_libraries(o5m_core PRIVATE tinygltf)
 
-# stb — 只在 Src/O5MTextureResource.cpp（#include <stb_image.h>）中使用，
-# 公共头不暴露 stb 类型，所以 PRIVATE。
 target_link_libraries(o5m_core PRIVATE stb)
 
 # GLFW — only Src/Platform/O5MWindow.cpp includes <GLFW/glfw3.h>; the public
@@ -59,8 +52,6 @@ target_link_libraries(o5m_core PRIVATE glfw)
 find_package(Vulkan REQUIRED)
 target_link_libraries(o5m_core PUBLIC Vulkan::Vulkan)
 
-# shaderc — 运行时 GLSL -> SPIR-V。只被 Src/Resources/O5MShaderResource.cpp 使用，
-# 头文件不暴露 shaderc 类型，所以 PRIVATE。
 find_package(shaderc QUIET)
 if(shaderc_FOUND)
     target_link_libraries(o5m_core PRIVATE shaderc::shaderc)

@@ -24,6 +24,7 @@ float geometrySmithHeightRelated(float NdotV, float NdotL, float roughness) {
 // ----------------------------------------------------------------------
 // - core render code
 // ----------------------------------------------------------------------
+
 struct Surface {
     vec3 albedo;
     vec3 normal;
@@ -68,4 +69,5 @@ void accumulateDirect(inout vec3 Lo, Surface s, vec3 L, vec3 radiance) {
     if (NdotL <= 0.0) return;
     Lo+=evaluateBRDF(s, L) * radiance * NdotL;
 }
+
 #endif //! O5M_PBR_GLSL
