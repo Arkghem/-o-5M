@@ -56,6 +56,13 @@ public:
                       uint32_t mipLevels, vk::ImageTiling tilling,
                       vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 
+    // Cube map (6 array layers + CUBE_COMPATIBLE). Used by the IBL bake chain:
+    // sky cube, irradiance cube, prefiltered cube (mipLevels = full chain).
+    std::pair<vk::raii::Image, vk::raii::DeviceMemory>
+        createImageCube(vk::Format format, uint32_t extent, uint32_t mipLevels,
+                        vk::ImageTiling tilling, vk::ImageUsageFlags usage,
+                        vk::MemoryPropertyFlags properties);
+
    SwapchainBundle createSwapchain(const vk::raii::SurfaceKHR& surface,
                                     vk::Extent2D requestedExtent);
 
@@ -63,6 +70,14 @@ public:
         const vk::Image image,
         vk::Format format,
         vk::ImageAspectFlags aspect = {}); 
+
+    // Whole-cube view: all 6 layers, levels [0, mipLevels). Writing a specific
+    // mip still needs a view whose baseMipLevel is that mip (imageStore binds
+    // the view's base level) -- that per-mip view is an M4 concern.
+    vk::raii::ImageView createImageViewCube(
+        const vk::Image image,
+        vk::Format format,
+        uint32_t mipLevels = 1);
 
     void copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& dst,
                     vk::DeviceSize size);

@@ -155,6 +155,65 @@ vk::raii::ImageView O5MDevice::createImageView2D(
     return vk::raii::ImageView(m_device, viewInfo);
 }
 
+std::pair<vk::raii::Image, vk::raii::DeviceMemory>
+O5MDevice::createImageCube(vk::Format format, uint32_t extent, uint32_t mipLevels,
+                           vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                           vk::MemoryPropertyFlags properties) {
+    if (mipLevels == 0) {
+        throw std::invalid_argument("O5MDevice::createImageCube: mipLevels must be >= 1");
+    }
+
+    vk::ImageCreateInfo imageInfo {
+        .flags = vk::ImageCreateFlagBits::eCubeCompatible,
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = { extent, extent, 1 },
+        .mipLevels = mipLevels,
+        .arrayLayers = 6,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = tiling,
+        .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive,
+    };
+
+    vk::raii::Image image(m_device, imageInfo);
+
+    vk::MemoryRequirements memReqs = image.getMemoryRequirements();
+
+    vk::MemoryAllocateInfo allocInfo {
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, properties)
+    };
+
+    vk::raii::DeviceMemory memory(m_device, allocInfo);
+    image.bindMemory(*memory, 0);
+
+    accountAllocation();
+
+    return { std::move(image), std::move(memory) };
+}
+
+vk::raii::ImageView O5MDevice::createImageViewCube(
+    const vk::Image image,
+    vk::Format format,
+    uint32_t mipLevels
+) {
+    vk::ImageViewCreateInfo viewInfo {
+        .image = image,
+        .viewType = vk::ImageViewType::eCube,
+        .format = format,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = mipLevels,
+            .baseArrayLayer = 0,
+            .layerCount = 6
+        }
+    };
+
+    return vk::raii::ImageView(m_device, viewInfo);
+}
+
 void O5MDevice::copyBuffer(const vk::raii::Buffer& src, const vk::raii::Buffer& dst,
                            vk::DeviceSize size) {
     vk::CommandBufferAllocateInfo allocInfo {
