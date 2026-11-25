@@ -21,7 +21,7 @@ void main() {
     if (texel.x >= size.x || texel.y >= size.y)
         return;
 
-    uv = (vec2(texel) + 0.5) / vec2(size);
+    vec2 uv = (vec2(texel) + 0.5) / vec2(size);
     
     float phi   = (uv.x * 2.0 - 1.0) * PI;
     float theta = (0.5 - uv.y) * PI;   
@@ -36,9 +36,9 @@ void main() {
     const float sunRadius = 1.5 * PI / 180.0;
     const float sunEdge   = 0.6 * PI / 180.0;
     float disk = smoothstep(cos(sunRadius + sunEdge), cos(sunRadius),
-                            dot(dir, pc.sunDirIntensity.xyz));
+                            dot(L_dir, pc.sun_direction.xyz));
 
-    color += pc.sunColor.rgb * pc.sunDirIntensity.w * disk;
+    color += pc.sun_color_intensity.rgb * pc.sun_color_intensity.w * disk;
 
     imageStore(uSky, texel, vec4(color, 1.0f));
 }
