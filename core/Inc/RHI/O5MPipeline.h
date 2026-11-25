@@ -55,6 +55,7 @@ public:
     void createPipeline(vk::ShaderModule vs, vk::ShaderModule fs,
                         const char* vsEntry = "main",
                         const char* fsEntry = "main");
+    void createComputePipeline(vk::ShaderModule cs, const char* csEntry = "main");
 
     void bindDescriptorSet(vk::raii::CommandBuffer& cmd, vk::DescriptorSet set);
     void bindDescriptorSets(vk::raii::CommandBuffer& cmd, uint32_t firstSet,
@@ -86,8 +87,11 @@ public:
 
     const O5MPipelineSpec& getSpec(void) const { return m_spec; }
 private:
+    void createPipelineLayout(void);
+
     O5MDevice& m_device;
     O5MPipelineSpec m_spec;
+    vk::PipelineBindPoint m_bindPoint = vk::PipelineBindPoint::eGraphics;
 
     vk::raii::PipelineLayout m_pipelineLayout = nullptr;
     vk::raii::Pipeline m_pipeline = nullptr;

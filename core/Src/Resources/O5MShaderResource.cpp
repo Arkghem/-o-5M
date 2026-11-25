@@ -30,9 +30,20 @@ std::vector<uint32_t> O5MShaderResource::compileGLSL(const std::string& glslSour
                                   const std::string& debugName) {
     static shaderc::Compiler compiler; 
 
-    shaderc_shader_kind kind = (m_stage & vk::ShaderStageFlagBits::eVertex)
-                                   ? shaderc_glsl_vertex_shader
-                                   : shaderc_glsl_fragment_shader;
+    shaderc_shader_kind kind;
+    switch (m_stage) {
+        case vk::ShaderStageFlagBits::eVertex:
+            kind = shaderc_glsl_vertex_shader;
+            break;
+        case vk::ShaderStageFlagBits::eFragment:
+            kind = shaderc_glsl_fragment_shader;
+            break;
+        case vk::ShaderStageFlagBits::eCompute:
+            kind = shaderc_glsl_compute_shader;
+            break;
+        default:
+            throw std::runtime_error("O5MShaderResource: unsupported shader stage");
+    }
 
     shaderc::CompileOptions options;
     options.SetOptimizationLevel(shaderc_optimization_level_performance);

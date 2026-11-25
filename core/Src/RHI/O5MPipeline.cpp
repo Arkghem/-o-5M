@@ -74,14 +74,7 @@ void O5MPipeline::createPipeline(vk::ShaderModule vs, vk::ShaderModule fs,
         .pAttachments = colorBlendAttachmentStates.data()
     };
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{
-        .setLayoutCount = static_cast<uint32_t>(m_spec.setLayouts.size()),
-        .pSetLayouts = m_spec.setLayouts.data(),
-        .pushConstantRangeCount = static_cast<uint32_t>(m_spec.pushConstants.size()),
-        .pPushConstantRanges = m_spec.pushConstants.data()
-    };
-
-    m_pipelineLayout = m_device.getDevice().createPipelineLayout(pipelineLayoutCreateInfo);
+    createPipelineLayout();
 
     vk::PipelineViewportStateCreateInfo viewportState{
         .viewportCount = 1,
@@ -115,6 +108,35 @@ void O5MPipeline::createPipeline(vk::ShaderModule vs, vk::ShaderModule fs,
     };
 
     m_pipeline = m_device.getDevice().createGraphicsPipeline(nullptr, pipelineInfo);
+}
+
+void O5MPipeline::createPipelineLayout(void) {
+    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{
+        .setLayoutCount = static_cast<uint32_t>(m_spec.setLayouts.size()),
+        .pSetLayouts = m_spec.setLayouts.data(),
+        .pushConstantRangeCount = static_cast<uint32_t>(m_spec.pushConstants.size()),
+        .pPushConstantRanges = m_spec.pushConstants.data()
+    };
+
+    m_pipelineLayout = m_device.getDevice().createPipelineLayout(pipelineLayoutCreateInfo);
+}
+
+void O5MPipeline::createComputePipeline(vk::ShaderModule cs, const char* csEntry) {
+    createPipelineLayout();
+
+    vk::PipelineShaderStageCreateInfo csState{
+        .stage = vk::ShaderStageFlagBits::eCompute,
+        .module = cs,
+        .pName = csEntry
+    };
+
+    vk::ComputePipelineCreateInfo pipelineInfo{
+        .stage = csState,
+        .layout = *m_pipelineLayout
+    };
+
+    m_pipeline = m_device.getDevice().createComputePipeline(nullptr, pipelineInfo);
+    m_bindPoint = vk::PipelineBindPoint::eCompute;
 }
 
 void O5MPipeline::begin(vk::raii::CommandBuffer& cmd, const O5MBeginInfo& beginInfo) {
@@ -180,14 +202,14 @@ void O5MPipeline::pushConstant(vk::raii::CommandBuffer &cmd, vk::ShaderStageFlag
 }
 
 void O5MPipeline::bindPipeline(vk::raii::CommandBuffer& cmd) {
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
+    cmd.bindPipeline(m_bindPoint, *m_pipeline);
 }
 
 void O5MPipeline::bindDescriptorSet(vk::raii::CommandBuffer& cmd, vk::DescriptorSet set) {
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout, 0, set, nullptr);
+    cmd.bindDescriptorSets(m_bindPoint, m_pipelineLayout, 0, set, nullptr);
 }
 
 void O5MPipeline::bindDescriptorSets(vk::raii::CommandBuffer& cmd, uint32_t firstSet,
                                      vk::ArrayProxy<const vk::DescriptorSet> sets) {
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout, firstSet, sets, nullptr);
+    cmd.bindDescriptorSets(m_bindPoint, m_pipelineLayout, firstSet, sets, nullptr);
 }

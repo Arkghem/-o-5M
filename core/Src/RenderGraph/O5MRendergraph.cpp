@@ -544,6 +544,7 @@ std::string_view useEnumName(E value) {
             case TexWrite::Depth:       return "TexWrite::Depth";
             case TexWrite::Storage:     return "TexWrite::Storage";
             case TexWrite::TransferDst: return "TexWrite::TransferDst";
+            case TexWrite::Present:     return "TexWrite::Present";
         }
     } else if constexpr (std::is_same_v<E, TexRW>) {
         switch (value) {
