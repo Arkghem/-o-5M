@@ -600,10 +600,61 @@ int main(int argc, char** argv) {
         // The only graph-owned resource. It is read by the conversion pass and
         // never needed again, so its lifetime is the graph's lifetime.
         std::string equirectName = "skyEquirect";
+
         const vk::Extent2D equirectExtent{ skyCubeExtent.width,
                                            skyCubeExtent.width / 2 };
+        Attachment equirect = createAttachment(
+            device,
+            iblFormat,
+            equirectExtent,
+            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled
+        );
+
         ResourceInfo equirectInfo(equirectName, equirectExtent, iblFormat,
                                   ResourceSource::Created);
+        O5MShaderResource equirectShader("equirect_sky_generator", vk::ShaderStageFlagBits::eCompute, device);
+        auto shaderData = readTextFile(O5M_SHADER_DIR + std::string("/") + "equirect_sky.glsl");
+        equirectShader.setData(shaderData.data(), shaderData.size());
+        equirectShader.load();
+
+        struct SkyParamsUBO {
+            glm::vec4 sunColorIntensity;
+            glm::vec4 sunDirection;
+            glm::vec4 zenithColor;
+            glm::vec4 horizonColor;
+            glm::vec4 groundColor;
+        };
+
+        SkyParamsUBO skyParamsData = {};
+
+        const auto skyLayout = descriptorAllocator.createLayout(
+            DescriptorSetLayoutDesc{
+                {0, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute},
+            });
+        auto skySets = descriptorAllocator.allocate(skyLayout, 1);
+
+        descriptorAllocator.writeImage(skySets[0], 0, vk::DescriptorType::eStorageImage, *equirect.view, nullptr, vk::ImageLayout::eGeneral);
+        O5MPipelineSpec skySpec{
+            .setLayouts = {descriptorAllocator.getLayout(skyLayout)},
+            .pushConstants = {{{vk::ShaderStageFlagBits::eCompute}, 0, sizeof(SkyParamsUBO)}}
+        };
+        O5MPipeline skyPipeline(device, skySpec);
+
+        // irradiance cube resources declared below.
+
+        const auto cubeLayout = descriptorAllocator.createLayout(
+                DescriptorSetLayoutDesc{
+                    {0, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute},
+                    {1, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute},
+                });
+        auto cubeSets = descriptorAllocator.allocate(cubeLayout, 1);
+
+        descriptorAllocator.writeImage(cubeSets[0], 0, vk::DescriptorType::eStorageImage, *bakedEnvironment.skyCube.view, nullptr, vk::ImageLayout::eGeneral);
+        O5MPipelineSpec cubeSpec{
+            .setLayouts = {descriptorAllocator.getLayout(cubeLayout)}
+        };
+        
+        O5MPipeline cubePipeline(device, cubeSpec);
 
         // Persisted outputs: allocated above, imported so the graph writes
         // through a handle it does not own. `compiled` still tracks layouts
@@ -647,39 +698,35 @@ int main(int argc, char** argv) {
                 vk::ImageUsageFlagBits::eSampled,
             vk::ImageLayout::eUndefined);
 
-        // 1. procedural equirect sky: gradient + sun disk. The sun direction
-        //    must come from the same light UBO the runtime graph uses.
         graph->addComputePass("equirect-sky",
             [equirectInfo](O5MPassBuilder& builder) mutable {
                 builder.write(equirectInfo, TexWrite::Storage);
             },
-            [](O5MRenderContext&, vk::raii::CommandBuffer&) {
-                // TODO(M4): dispatch (2048/8)x(1024/8); write gradient + sun
-                //   disk with the light UBO's sun direction.
+            [&skyPipeline, skySet = skySets[0], skyParamsData](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                skyPipeline.bindPipeline(cmd);
+                skyPipeline.bindDescriptorSet(cmd, skySet.set);
+                skyPipeline.pushConstant(cmd, vk::ShaderStageFlagBits::eCompute, skyParamsData, 0);
+                cmd.dispatch(2048/32, 1024/32, 1);
             });
 
-        // 2. equirect -> cube, one dispatch for all 6 faces. Deliberately not
-        //    six graphic passes: the graph is single-writer and its barriers
-        //    currently cover layer 0 only (see the TODO at the bottom).
         graph->addComputePass("equirect-to-cube",
             [equirectInfo, skyCubeInfo](O5MPassBuilder& builder) mutable {
                 builder.read(equirectInfo, TexRead::Sampled);
                 builder.write(skyCubeInfo, TexWrite::Storage);
             },
-            [](O5MRenderContext&, vk::raii::CommandBuffer&) {
-                // TODO(M4): gl_GlobalInvocationID.z = face; build the cube
-                //   direction from the face basis, then sample equirect.
+            [&cubePipeline, cubeSet = cubeSets[0]](O5MRenderContext& ctx, vk::raii::CommandBuffer& cmd) {
+                cubePipeline.bindPipeline(cmd);
+                cubePipeline.bindDescriptorSet(cmd, cubeSet.set);
+                cmd.dispatch(1024/32, 1024/32, 6);
             });
 
-        // 3. diffuse irradiance: cosine convolution of the sky cube.
         graph->addComputePass("irradiance-convolve",
             [skyCubeInfo, irradianceInfo](O5MPassBuilder& builder) mutable {
                 builder.read(skyCubeInfo, TexRead::Sampled);
                 builder.write(irradianceInfo, TexWrite::Storage);
             },
             [](O5MRenderContext&, vk::raii::CommandBuffer&) {
-                // TODO(M4): 64x64 pixels over all faces; cosine-weighted
-                //   hemisphere integral (precompute the sample directions).
+            
             });
 
         // 4. specular prefilter: GGX importance sampling, mip = roughness.
@@ -742,6 +789,8 @@ int main(int argc, char** argv) {
     vk::ImageLayout irradianceCubeLayout = vk::ImageLayout::eGeneral;
     vk::ImageLayout prefilteredCubeLayout = vk::ImageLayout::eGeneral;
     vk::ImageLayout brdfLutLayout = vk::ImageLayout::eColorAttachmentOptimal;
+
+    bool runtimeGraphDumped = false;
 
     auto buildGraph = [&](uint32_t imageIndex, uint32_t frame, const O5MDrawList& visible) {
         auto graph = std::make_unique<O5MRendergraph>(device);
@@ -973,6 +1022,10 @@ int main(int argc, char** argv) {
             });
 
         graph->compile();
+        if (!runtimeGraphDumped) {
+            graph->dump();
+            runtimeGraphDumped = true;
+        }
         return graph;
     };
 
